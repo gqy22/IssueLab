@@ -1,6 +1,5 @@
 """测试 GitHub Actions 工作流配置"""
 from pathlib import Path
-import re
 
 # 项目根目录
 PROJECT_ROOT = Path(__file__).parent.parent
