@@ -550,6 +550,11 @@ def main(argv: list[str] | None = None) -> int:
             failed_agents.append({"username": username, "reason": "No repository configured"})
             continue
 
+        # 跳过源仓库本身（避免自我 dispatch）
+        if repository == args.source_repo:
+            print(f"⚠️ Skipping {username}: Cannot dispatch to source repository itself", file=sys.stderr)
+            continue
+
         # 添加用户特定信息
         payload = client_payload.copy()
         payload["target_username"] = username
