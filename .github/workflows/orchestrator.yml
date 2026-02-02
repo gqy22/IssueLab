@@ -49,6 +49,27 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Get Issue comments
+        id: get_comments
+        run: |
+          # 获取所有评论并格式化
+          gh issue view ${{ github.event.issue.number }} \
+            --json comments \
+            --jq '.comments[] | "- **[\(.author.login)]** (\(.createdAt | strptime("%Y-%m-%dT%H:%M:%SZ") | strftime("%Y-%m-%d %H:%M")):\n\(.body))"' \
+            > /tmp/comments.txt
+
+          # 计算评论数量
+          COMMENT_COUNT=$(gh issue view ${{ github.event.issue.number }} \
+            --json comments --jq '.comments | length')
+          echo "comment_count=$COMMENT_COUNT" >> $GITHUB_OUTPUT
+
+          # 输出多行格式的评论内容
+          echo "issue_comments<<EOF" >> $GITHUB_OUTPUT
+          cat /tmp/comments.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Run full review process
         run: |
           echo "=== 标签触发评审开始 ==="
@@ -62,6 +83,8 @@ jobs:
             --issue ${{ github.event.issue.number }} \
             --context "${{ steps.get_issue.outputs.issue_body }}" \
             --title "${{ steps.get_issue.outputs.issue_title }}" \
+            --comments "${{ steps.get_comments.outputs.issue_comments }}" \
+            --comment-count "${{ steps.get_comments.outputs.comment_count }}" \
             --post
 
           echo "标记需要总结..."
@@ -116,6 +139,27 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Get Issue comments
+        id: get_comments
+        run: |
+          # 获取所有评论并格式化
+          gh issue view ${{ github.event.issue.number }} \
+            --json comments \
+            --jq '.comments[] | "- **[\(.author.login)]** (\(.createdAt | strptime("%Y-%m-%dT%H:%M:%SZ") | strftime("%Y-%m-%d %H:%M")):\n\(.body))"' \
+            > /tmp/comments.txt
+
+          # 计算评论数量
+          COMMENT_COUNT=$(gh issue view ${{ github.event.issue.number }} \
+            --json comments --jq '.comments | length')
+          echo "comment_count=$COMMENT_COUNT" >> $GITHUB_OUTPUT
+
+          # 输出多行格式的评论内容
+          echo "issue_comments<<EOF" >> $GITHUB_OUTPUT
+          cat /tmp/comments.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Run parallel agents
         if: steps.parse.outputs.mentions != ''
         run: |
@@ -125,6 +169,8 @@ jobs:
             --agents "${{ steps.parse.outputs.mentions }}" \
             --context "${{ steps.get_issue.outputs.issue_body }}" \
             --title "${{ steps.get_issue.outputs.issue_title }}" \
+            --comments "${{ steps.get_comments.outputs.issue_comments }}" \
+            --comment-count "${{ steps.get_comments.outputs.comment_count }}" \
             --post
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -181,6 +227,27 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Get Issue comments
+        id: get_comments
+        run: |
+          # 获取所有评论并格式化
+          gh issue view ${{ github.event.issue.number }} \
+            --json comments \
+            --jq '.comments[] | "- **[\(.author.login)]** (\(.createdAt | strptime("%Y-%m-%dT%H:%M:%SZ") | strftime("%Y-%m-%d %H:%M")):\n\(.body))"' \
+            > /tmp/comments.txt
+
+          # 计算评论数量
+          COMMENT_COUNT=$(gh issue view ${{ github.event.issue.number }} \
+            --json comments --jq '.comments | length')
+          echo "comment_count=$COMMENT_COUNT" >> $GITHUB_OUTPUT
+
+          # 输出多行格式的评论内容
+          echo "issue_comments<<EOF" >> $GITHUB_OUTPUT
+          cat /tmp/comments.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       # 处理 /quiet 命令
       - name: Handle quiet command
         if: steps.extract.outputs.command == '/quiet'
@@ -200,6 +267,8 @@ jobs:
             --agents "moderator" \
             --context "${{ steps.get_issue.outputs.issue_body }}" \
             --title "${{ steps.get_issue.outputs.issue_title }}" \
+            --comments "${{ steps.get_comments.outputs.issue_comments }}" \
+            --comment-count "${{ steps.get_comments.outputs.comment_count }}" \
             --post
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -220,6 +289,8 @@ jobs:
             --issue ${{ github.event.issue.number }} \
             --context "${{ steps.get_issue.outputs.issue_body }}" \
             --title "${{ steps.get_issue.outputs.issue_title }}" \
+            --comments "${{ steps.get_comments.outputs.issue_comments }}" \
+            --comment-count "${{ steps.get_comments.outputs.comment_count }}" \
             --post
 
           echo "标记需要总结..."
@@ -243,6 +314,8 @@ jobs:
             --agents "summarizer" \
             --context "${{ steps.get_issue.outputs.issue_body }}" \
             --title "${{ steps.get_issue.outputs.issue_title }}" \
+            --comments "${{ steps.get_comments.outputs.issue_comments }}" \
+            --comment-count "${{ steps.get_comments.outputs.comment_count }}" \
             --post
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

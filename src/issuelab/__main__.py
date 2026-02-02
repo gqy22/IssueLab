@@ -71,6 +71,8 @@ def main():
     execute_parser.add_argument("--post", action="store_true", help="自动发布结果到 Issue")
     execute_parser.add_argument("--context", type=str, default="", help="Issue 内容上下文")
     execute_parser.add_argument("--title", type=str, default="", help="Issue 标题")
+    execute_parser.add_argument("--comments", type=str, default="", help="Issue 所有评论内容")
+    execute_parser.add_argument("--comment-count", type=int, default=0, help="评论数量")
 
     # 顺序评审流程
     review_parser = subparsers.add_parser("review", help="运行顺序评审流程")
@@ -78,6 +80,8 @@ def main():
     review_parser.add_argument("--post", action="store_true", help="自动发布结果到 Issue")
     review_parser.add_argument("--context", type=str, default="", help="Issue 内容上下文")
     review_parser.add_argument("--title", type=str, default="", help="Issue 标题")
+    review_parser.add_argument("--comments", type=str, default="", help="Issue 所有评论内容")
+    review_parser.add_argument("--comment-count", type=int, default=0, help="评论数量")
 
     args = parser.parse_args()
 
@@ -87,9 +91,15 @@ def main():
         title = getattr(args, "title", "") or ""
         context = f"**Issue 标题**: {title}\n\n**Issue 内容**:\n{args.context}"
 
+    # 如果有评论，添加到上下文
+    comment_count = getattr(args, "comment_count", 0) or 0
+    comments = getattr(args, "comments", "") or ""
+    if comment_count > 0 and comments:
+        context += f"\n\n**本 Issue 共有 {comment_count} 条历史评论，请仔细阅读并分析：**\n\n{comments}"
+
     if args.command == "execute":
         agents = args.agents.split()
-        results = asyncio.run(run_agents_parallel(args.issue, agents, context))
+        results = asyncio.run(run_agents_parallel(args.issue, agents, context, comment_count))
 
         # 输出结果
         for agent_name, response in results.items():
@@ -106,7 +116,7 @@ def main():
     elif args.command == "review":
         # 顺序执行：moderator -> reviewer_a -> reviewer_b -> summarizer
         agents = ["moderator", "reviewer_a", "reviewer_b", "summarizer"]
-        results = asyncio.run(run_agents_parallel(args.issue, agents, context))
+        results = asyncio.run(run_agents_parallel(args.issue, agents, context, comment_count))
 
         for agent_name, response in results.items():
             print(f"\n=== {agent_name} result ===")

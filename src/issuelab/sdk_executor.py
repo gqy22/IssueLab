@@ -103,20 +103,26 @@ async def run_single_agent(prompt: str, agent_name: str) -> str:
     return "\n".join(response_text)
 
 
-async def run_agents_parallel(issue_number: int, agents: list[str], context: str = "") -> dict:
+async def run_agents_parallel(issue_number: int, agents: list[str], context: str = "", comment_count: int = 0) -> dict:
     """并行运行多个代理
 
     Args:
         issue_number: Issue 编号
         agents: 代理名称列表
         context: 上下文信息
+        comment_count: 评论数量（用于增强上下文）
 
     Returns:
         {agent_name: response_text}
     """
+    # 构建增强的上下文
+    full_context = context
+    if comment_count > 0:
+        full_context += f"\n\n**重要提示**: 本 Issue 已有 {comment_count} 条历史评论。Summarizer 代理应读取并分析这些评论，提取共识、分歧和行动项。"
+
     base_prompt = f"""请对 GitHub Issue #{issue_number} 执行以下任务：
 
-{context}
+{full_context}
 
 请以 [Agent: {{agent_name}}] 为前缀发布你的回复。"""
 
