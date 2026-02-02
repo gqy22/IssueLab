@@ -180,7 +180,7 @@ def main(argv: list[str] | None = None) -> int:
         退出码，0 表示成功
     """
     parser = argparse.ArgumentParser(description="Dispatch events to user repositories")
-    parser.add_argument("--mentions", required=True, help="JSON array of mentions")
+    parser.add_argument("--mentions", required=True, help="Mentions list (JSON array or comma-separated)")
     parser.add_argument(
         "--registry-dir", default="agents/_registry", help="Registry directory (default: agents/_registry)"
     )
@@ -201,13 +201,19 @@ def main(argv: list[str] | None = None) -> int:
         print("Error: GITHUB_TOKEN environment variable not set", file=sys.stderr)
         return 1
 
-    # 解析 mentions
-    try:
-        mentions = json.loads(args.mentions)
-    except json.JSONDecodeError as e:
-        print(f"Error: Invalid JSON in mentions: {args.mentions}", file=sys.stderr)
-        print(f"  {e}", file=sys.stderr)
-        return 1
+    # 解析 mentions（支持 JSON 和 CSV 格式）
+    mentions_str = args.mentions.strip()
+    if mentions_str.startswith("[") and mentions_str.endswith("]"):
+        # JSON 数组格式
+        try:
+            mentions = json.loads(mentions_str)
+        except json.JSONDecodeError as e:
+            print(f"Error: Invalid JSON in mentions: {args.mentions}", file=sys.stderr)
+            print(f"  {e}", file=sys.stderr)
+            return 1
+    else:
+        # CSV 格式（逗号分隔）
+        mentions = [m.strip() for m in mentions_str.split(",") if m.strip()]
 
     if not mentions:
         print("Info: No mentions found, nothing to dispatch")

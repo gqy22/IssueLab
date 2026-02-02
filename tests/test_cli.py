@@ -238,3 +238,65 @@ enabled: false
         matched = match_triggers(["bob-cv"], registry)
         assert len(matched) == 1
         assert matched[0]["username"] == "bob"
+
+
+class TestDispatchCLI:
+    """Tests for dispatch CLI mention parsing."""
+
+    def test_parse_json_mentions(self, monkeypatch):
+        """Test parsing JSON format mentions."""
+        from issuelab.cli.dispatch import main
+
+        # Mock environment
+        monkeypatch.setenv("GITHUB_TOKEN", "fake_token")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create empty registry
+            registry_dir = Path(tmpdir)
+            registry_dir.mkdir(exist_ok=True)
+
+            # Should handle JSON format
+            result = main(
+                [
+                    "--mentions",
+                    '["alice", "bob"]',
+                    "--registry-dir",
+                    str(registry_dir),
+                    "--source-repo",
+                    "test/repo",
+                    "--issue-number",
+                    "1",
+                ]
+            )
+
+            # Returns 0 even with no matches (no agents to dispatch to)
+            assert result == 0
+
+    def test_parse_csv_mentions(self, monkeypatch):
+        """Test parsing CSV format mentions."""
+        from issuelab.cli.dispatch import main
+
+        # Mock environment
+        monkeypatch.setenv("GITHUB_TOKEN", "fake_token")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create empty registry
+            registry_dir = Path(tmpdir)
+            registry_dir.mkdir(exist_ok=True)
+
+            # Should handle CSV format
+            result = main(
+                [
+                    "--mentions",
+                    "alice,bob",
+                    "--registry-dir",
+                    str(registry_dir),
+                    "--source-repo",
+                    "test/repo",
+                    "--issue-number",
+                    "1",
+                ]
+            )
+
+            # Returns 0 even with no matches (no agents to dispatch to)
+            assert result == 0
