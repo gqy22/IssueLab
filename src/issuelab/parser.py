@@ -1,8 +1,8 @@
-"""@mention 解析器：从评论中提取代理名称"""
+"""Agent @mention 解析器：从评论中提取并映射 Agent 名称"""
 
 import re
 
-# 代理名称映射表
+# Agent 别名映射表
 AGENT_ALIASES = {
     # Moderator 变体
     "moderator": "moderator",
@@ -22,8 +22,17 @@ AGENT_ALIASES = {
 }
 
 
-def parse_mentions(comment_body: str) -> list[str]:
-    """从评论中解析 @mention"""
+def parse_agent_mentions(comment_body: str) -> list[str]:
+    """从评论中解析 @mention 并映射到 Agent 名称
+
+    专用于解析和转换 Agent 别名（如 @mod -> moderator）
+
+    Args:
+        comment_body: 评论内容
+
+    Returns:
+        标准化的 Agent 名称列表
+    """
     pattern = r"@([a-zA-Z_]+)"
     raw_mentions = re.findall(pattern, comment_body, re.IGNORECASE)
 
@@ -45,6 +54,18 @@ def parse_mentions(comment_body: str) -> list[str]:
     return unique_agents
 
 
-def has_mentions(comment_body: str) -> bool:
-    """检查评论是否包含 @mention"""
+def has_agent_mentions(comment_body: str) -> bool:
+    """检查评论是否包含 Agent @mention
+
+    Args:
+        comment_body: 评论内容
+
+    Returns:
+        是否包含 @mention
+    """
     return bool(re.search(r"@[a-zA-Z_]+", comment_body))
+
+
+# 向后兼容的别名（逐步废弃）
+parse_mentions = parse_agent_mentions
+has_mentions = has_agent_mentions

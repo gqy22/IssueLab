@@ -1,10 +1,14 @@
 """CLI tools for IssueLab."""
 
 from .mentions import main as parse_mentions_main
-from .mentions import parse_mentions
+from .mentions import parse_github_mentions
+
+# 向后兼容别名
+parse_mentions = parse_github_mentions
 
 __all__ = [
-    "parse_mentions",
+    "parse_github_mentions",
+    "parse_mentions",  # 向后兼容
     "parse_mentions_main",
 ]
 

@@ -11,6 +11,7 @@ from claude_agent_sdk import (
     query,
 )
 
+from issuelab.config import Config
 from issuelab.logging_config import get_logger
 from issuelab.retry import retry_async
 
@@ -147,26 +148,13 @@ def load_prompt(agent_name: str) -> str:
 
 def create_agent_options() -> ClaudeAgentOptions:
     """创建包含所有评审代理的配置（动态发现）"""
-    # 从环境变量读取配置
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    base_url = os.environ.get("ANTHROPIC_BASE_URL", "")
-    model = os.environ.get("ANTHROPIC_MODEL", "sonnet")
-
-    # 构建环境变量字典传给 SDK
-    env = {}
-    if api_key:
-        env["ANTHROPIC_API_KEY"] = api_key
-    if base_url:
-        env["ANTHROPIC_BASE_URL"] = base_url
-    if model:
-        env["ANTHROPIC_MODEL"] = model
-
-    # arxiv MCP 存储路径
-    arxiv_storage_path = os.environ.get("ARXIV_STORAGE_PATH", str(Path.home() / ".arxiv-mcp-server" / "papers"))
+    # 从配置模块获取环境变量
+    env = Config.get_anthropic_env()
+    arxiv_storage_path = Config.get_arxiv_storage_path()
 
     # MCP 服务器配置
     mcp_servers = []
-    if os.environ.get("ENABLE_ARXIV_MCP", "true").lower() == "true":
+    if Config.is_arxiv_mcp_enabled():
         # 使用预安装的 arxiv-mcp-server (通过 uv tool install 安装)
         # 而不是 uv tool run（每次都重新安装，导致超时）
         mcp_servers.append(
@@ -182,7 +170,7 @@ def create_agent_options() -> ClaudeAgentOptions:
         )
 
     # GitHub MCP 服务器配置
-    if os.environ.get("ENABLE_GITHUB_MCP", "true").lower() == "true":
+    if Config.is_github_mcp_enabled():
         mcp_servers.append(
             {
                 "name": "github-mcp-server",
@@ -214,6 +202,9 @@ def create_agent_options() -> ClaudeAgentOptions:
         ]
 
     all_tools = base_tools + arxiv_tools + github_tools
+
+    # 获取模型配置
+    model = Config.get_anthropic_model()
 
     agent_definitions = {}
     for name, config in agents.items():

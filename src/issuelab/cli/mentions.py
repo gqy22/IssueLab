@@ -1,7 +1,10 @@
 """
-解析 Issue/Comment 中的 @mentions
+解析 Issue/Comment 中的 @mentions (GitHub 用户名)
 
-提取可复用的 mention 解析逻辑。
+用于跨仓库触发：提取 GitHub 用户名用于分发到用户仓库
+与 issuelab.parser 的区别：
+- parser.py: 解析 Agent 别名（@mod -> moderator）
+- mentions.py: 解析 GitHub 用户名（@alice, @bob）
 """
 
 import argparse
@@ -11,20 +14,22 @@ import re
 import sys
 
 
-def parse_mentions(text: str) -> list[str]:
+def parse_github_mentions(text: str) -> list[str]:
     """
-    从文本中提取所有 @mentions
+    从文本中提取所有 GitHub @mentions
+
+    用于跨仓库分发，提取真实的 GitHub 用户名
 
     Args:
         text: 要解析的文本
 
     Returns:
-        提取到的用户名列表（不包含 @），去重保持顺序
+        提取到的 GitHub 用户名列表（不包含 @），去重保持顺序
 
     Example:
-        >>> parse_mentions("@alice and @bob, please review")
+        >>> parse_github_mentions("@alice and @bob, please review")
         ['alice', 'bob']
-        >>> parse_mentions("@alice @alice @bob")
+        >>> parse_github_mentions("@alice @alice @bob")
         ['alice', 'bob']
     """
     if not text:
@@ -89,8 +94,8 @@ def main(argv: list[str] | None = None) -> int:
         print("Error: No text provided", file=sys.stderr)
         return 1
 
-    # 解析 mentions
-    mentions = parse_mentions(text)
+    # 解析 mentions（使用新的函数名）
+    mentions = parse_github_mentions(text)
 
     # 输出
     if args.output == "json":

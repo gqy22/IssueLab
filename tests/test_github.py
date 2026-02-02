@@ -27,7 +27,8 @@ def test_post_comment():
 
         result = post_comment(1, "测试评论")
 
-        assert "Comment posted" in result
+        # 新的实现返回 bool
+        assert result is True
         mock_run.assert_called_once()
 
 
@@ -38,5 +39,6 @@ def test_update_label():
 
         result = update_label(1, "bug", action="add")
 
-        assert "Label 'bug' added" in result
+        # 新的实现返回 bool
+        assert result is True
         mock_run.assert_called_once()

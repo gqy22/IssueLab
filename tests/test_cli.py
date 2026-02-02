@@ -4,7 +4,7 @@ import json
 import tempfile
 from pathlib import Path
 
-from issuelab.cli.mentions import parse_mentions
+from issuelab.cli.mentions import parse_github_mentions
 
 
 class TestParseMentions:
@@ -13,44 +13,44 @@ class TestParseMentions:
     def test_single_mention(self):
         """Test parsing single mention."""
         text = "@alice please review"
-        mentions = parse_mentions(text)
+        mentions = parse_github_mentions(text)
         assert mentions == ["alice"]
 
     def test_multiple_mentions(self):
         """Test parsing multiple mentions."""
         text = "@alice @bob @charlie"
-        mentions = parse_mentions(text)
+        mentions = parse_github_mentions(text)
         assert mentions == ["alice", "bob", "charlie"]
 
     def test_duplicate_mentions(self):
         """Test deduplication."""
         text = "@alice @bob @alice @charlie @bob"
-        mentions = parse_mentions(text)
+        mentions = parse_github_mentions(text)
         assert mentions == ["alice", "bob", "charlie"]
 
     def test_mention_with_hyphens(self):
         """Test usernames with hyphens."""
         text = "@user-name @test-user-123"
-        mentions = parse_mentions(text)
+        mentions = parse_github_mentions(text)
         assert mentions == ["user-name", "test-user-123"]
 
     def test_invalid_mentions(self):
         """Test invalid mention patterns."""
         text = "@-invalid @invalid- @123"
-        mentions = parse_mentions(text)
+        mentions = parse_github_mentions(text)
         # 正则会匹配 @-invalid 的 invalid 和 @123 的 123
         # GitHub 的实际行为也是这样的
         assert mentions == ["invalid", "123"]
 
     def test_empty_text(self):
         """Test empty input."""
-        assert parse_mentions("") == []
-        assert parse_mentions(None) == []
+        assert parse_github_mentions("") == []
+        assert parse_github_mentions(None) == []
 
     def test_no_mentions(self):
         """Test text without mentions."""
         text = "This is a normal text without any mentions"
-        mentions = parse_mentions(text)
+        mentions = parse_github_mentions(text)
         assert mentions == []
 
     def test_mention_in_markdown(self):
@@ -67,7 +67,7 @@ class TestParseMentions:
 
         cc @charlie
         """
-        mentions = parse_mentions(text)
+        mentions = parse_github_mentions(text)
         assert "alice" in mentions
         assert "bob" in mentions
         assert "charlie" in mentions

@@ -1,14 +1,14 @@
 """集成测试 - 验证模块间协作"""
 
 from issuelab.agents import discover_agents, load_prompt, normalize_agent_name
-from issuelab.parser import parse_mentions
+from issuelab.parser import parse_agent_mentions
 
 
 def test_parser_agent_integration():
     """测试 parser 和 agents 模块的集成"""
     # 解析 @mention
     comment = "@Moderator please review @ReviewerA @revb"
-    agents = parse_mentions(comment)
+    agents = parse_agent_mentions(comment)
 
     # 验证所有解析的 agent 都存在
     discovered = discover_agents()
