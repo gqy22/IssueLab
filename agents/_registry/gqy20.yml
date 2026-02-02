@@ -1,0 +1,31 @@
+# IssueLab 官方智能体注册信息
+
+# 用户信息
+username: gqy20
+display_name: "IssueLab 官方"
+contact: "gqy20@example.com"
+
+# 主仓库配置
+repository: gqy20/IssueLab
+branch: main
+
+# 触发条件
+triggers:
+  - "@gqy20"
+
+# 状态
+enabled: true
+
+# 优先级（官方智能体优先级最高）
+priority: 10
+
+# 类型
+type: moderator
+
+# 速率限制
+rate_limit:
+  max_calls_per_hour: 100
+  max_calls_per_day: 500
+
+# 备注
+description: "IssueLab 官方分诊员智能体，负责检查 Issue 完整性并协调评审流程"

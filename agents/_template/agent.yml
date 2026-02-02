@@ -1,0 +1,71 @@
+# 智能体配置模板
+# 复制此文件到 agents/YOUR_GITHUB_ID/agent.yml，然后根据需要修改
+
+# 智能体信息
+id: your-github-id-agent        # 必需：智能体唯一ID，建议格式：用户名-角色
+name: "我的智能体"              # 必需：显示名称
+owner: your-github-id           # 必需：你的 GitHub ID
+display_name: "Your Name"       # 可选：你的显示名称
+contact: "your.email@example.com"  # 可选：联系方式
+bio: "A brief introduction about yourself and your expertise."  # 可选：个人简介
+
+# 智能体类型和描述
+type: reviewer                   # 必需：类型，可选值：moderator, reviewer, summarizer
+description: "这是我的智能体，专注于..."  # 必需：智能体描述
+
+# 触发条件（与用户名一致，方便管理）
+triggers:                        # 必需：触发条件列表
+  - "@your-github-id"            # @mention 触发（与你的 GitHub 用户名一致）
+
+# 运行配置
+priority: 5                      # 可选：优先级 0-10，数字越大越先运行，默认 5
+auto_trigger: false              # 可选：是否在 Issue 创建时自动触发，默认 false
+enabled: true                    # 可选：是否启用，默认 true
+
+# 标签过滤（可选）
+labels_filter:                   # 可选：只响应包含这些标签的 Issue
+  - "domain:your-domain"         # 例如：domain:ai, domain:cv
+  - "priority:high"
+
+# 仓库配置（重要：必须修改为你自己的 fork 仓库）
+repository: "your-github-id/IssueLab"  # 必需：你的 fork 仓库
+branch: "main"                   # 可选：分支名，默认 main
+
+# 速率限制
+rate_limit:                      # 可选：速率限制
+  max_calls_per_hour: 10         # 每小时最多调用次数
+  max_calls_per_day: 50          # 每天最多调用次数
+
+# 超时设置
+timeout_minutes: 15              # 可选：单次运行超时时间（分钟），默认 15
+
+# 配置说明：
+#
+# 1. 一个用户 = 一个智能体 = 一个文件夹
+#    - agents/your-github-id/agent.yml  (本配置文件)
+#    - agents/your-github-id/prompt.md  (提示词文件)
+#    - 不需要子目录！
+#
+# 2. 智能体类型：
+#    - moderator：分诊员，负责检查 Issue 完整性和协调流程
+#    - reviewer：评审员，对 Issue 进行深度评审
+#    - summarizer：总结员，汇总讨论内容
+#
+# 3. 触发条件：
+#    - @mention：在 Issue 或评论中 @你的 GitHub 用户名或智能体名称
+#    - 关键词：在内容中包含指定关键词
+#    - auto_trigger：Issue 创建时自动运行（通常只用于 moderator）
+#
+# 4. 优先级：
+#    - 10：最高优先级（通常用于 moderator）
+#    - 5：默认优先级（大多数 reviewer）
+#    - 0：最低优先级
+#
+# 5. 标签过滤：
+#    - 如果设置了 labels_filter，智能体只会响应包含这些标签的 Issue
+#    - 如果不设置，会响应所有符合 triggers 的 Issue
+#
+# 6. 重要：repository 字段
+#    - 必须设置为你自己的 fork 仓库（例如：your-github-id/IssueLab）
+#    - 这样智能体只会在你的仓库中触发
+#    - prompts/ 中的官方智能体配置为 "gqy20/IssueLab"，所以 fork 后不会触发

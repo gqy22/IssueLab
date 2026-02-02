@@ -1,0 +1,110 @@
+name: Run Agent on Repository Dispatch
+
+on:
+  repository_dispatch:
+    types: [issue_mention]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  run-agent:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        run: |
+          uv pip install --system \
+            anthropic \
+            PyYAML \
+            PyGithub
+
+      - name: Extract agent username
+        id: agent
+        run: |
+          # 从仓库名提取用户名（假设仓库名是 username/IssueLab）
+          username="${{ github.repository_owner }}"
+          echo "username=$username" >> $GITHUB_OUTPUT
+          echo "Agent username: $username"
+
+      - name: Check agent config exists
+        id: check
+        run: |
+          config_file="agents/${{ steps.agent.outputs.username }}/agent.yml"
+          prompt_file="agents/${{ steps.agent.outputs.username }}/prompt.md"
+
+          if [ ! -f "$config_file" ]; then
+            echo "Error: Agent config not found: $config_file"
+            echo "exists=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+          if [ ! -f "$prompt_file" ]; then
+            echo "Error: Agent prompt not found: $prompt_file"
+            echo "exists=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+          echo "exists=true" >> $GITHUB_OUTPUT
+          echo "config_file=$config_file" >> $GITHUB_OUTPUT
+          echo "prompt_file=$prompt_file" >> $GITHUB_OUTPUT
+
+      - name: Run agent
+        if: steps.check.outputs.exists == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Running agent for: ${{ steps.agent.outputs.username }}"
+          echo "Source Issue: ${{ github.event.client_payload.source_repo }}#${{ github.event.client_payload.issue_number }}"
+
+          # TODO: 实现 SDK executor
+          # python -m issuelab.sdk_executor \
+          #   --agent-config "${{ steps.check.outputs.config_file }}" \
+          #   --agent-prompt "${{ steps.check.outputs.prompt_file }}" \
+          #   --source-repo "${{ github.event.client_payload.source_repo }}" \
+          #   --issue-number ${{ github.event.client_payload.issue_number }}
+
+          echo "Agent execution completed (placeholder)"
+
+      - name: Comment on config error
+        if: failure() && steps.check.outputs.exists == 'false'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const [owner, repo] = '${{ github.event.client_payload.source_repo }}'.split('/');
+            await github.rest.issues.createComment({
+              owner: owner,
+              repo: repo,
+              issue_number: ${{ github.event.client_payload.issue_number }},
+              body: `⚠️ @${{ steps.agent.outputs.username }}'s agent configuration is missing or invalid. Please check your fork.`
+            });
+
+      - name: Comment on execution error
+        if: failure() && steps.check.outputs.exists == 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const [owner, repo] = '${{ github.event.client_payload.source_repo }}'.split('/');
+            await github.rest.issues.createComment({
+              owner: owner,
+              repo: repo,
+              issue_number: ${{ github.event.client_payload.issue_number }},
+              body: `❌ @${{ steps.agent.outputs.username }}'s agent encountered an error. Please check the [Actions logs](https://github.com/${{ github.repository }}/actions).`
+            });

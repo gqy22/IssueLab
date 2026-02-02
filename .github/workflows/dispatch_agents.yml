@@ -1,0 +1,84 @@
+name: Dispatch to User Agents
+
+on:
+  issues:
+    types: [opened, edited]
+  issue_comment:
+    types: [created, edited]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          pip install PyYAML requests
+
+      - name: Parse mentions from Issue
+        if: github.event_name == 'issues'
+        id: parse_issue
+        run: |
+          python scripts/parse_mentions.py \
+            --issue-body "${{ github.event.issue.body }}" \
+            --output json
+
+      - name: Parse mentions from Comment
+        if: github.event_name == 'issue_comment'
+        id: parse_comment
+        run: |
+          python scripts/parse_mentions.py \
+            --comment-body "${{ github.event.comment.body }}" \
+            --output json
+
+      - name: Get labels
+        id: labels
+        run: |
+          labels='${{ toJson(github.event.issue.labels.*.name) }}'
+          echo "labels=$labels" >> $GITHUB_OUTPUT
+
+      - name: Dispatch to user repositories
+        env:
+          GITHUB_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+        run: |
+          mentions="${{ steps.parse_issue.outputs.mentions || steps.parse_comment.outputs.mentions }}"
+
+          if [ -z "$mentions" ] || [ "$mentions" = "[]" ]; then
+            echo "No mentions found, skipping dispatch"
+            exit 0
+          fi
+
+          python scripts/dispatch_to_users.py \
+            --mentions "$mentions" \
+            --registry-dir agents/_registry \
+            --source-repo "${{ github.repository }}" \
+            --issue-number ${{ github.event.issue.number }} \
+            --issue-title "${{ github.event.issue.title }}" \
+            --issue-body "${{ github.event.issue.body }}" \
+            ${{ github.event_name == 'issue_comment' && format('--comment-id {0}', github.event.comment.id) || '' }} \
+            ${{ github.event_name == 'issue_comment' && format('--comment-body "{0}"', github.event.comment.body) || '' }} \
+            --labels '${{ steps.labels.outputs.labels }}'
+
+      - name: Comment on dispatch failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '⚠️ Failed to dispatch to some agents. Please check the Actions logs for details.'
+            })
