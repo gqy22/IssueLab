@@ -105,9 +105,35 @@ if __name__ == "__main__":
 
 ## 🔑 配置要求
 
-### PAT_TOKEN Secret
+### 认证方式
 
-`dispatch_to_users.py` 需要 **Personal Access Token** 来触发跨仓库的 workflow：
+系统支持两种认证方式：
+
+#### 方式 1：GitHub App（推荐 ⭐）
+
+使用 GitHub App 提供更安全的跨仓库访问：
+
+**优势：**
+- ✅ 细粒度权限控制
+- ✅ Token 自动刷新
+- ✅ 支持 fork 仓库
+- ✅ 独立审计日志
+
+**配置步骤：**
+1. 创建 GitHub App
+2. 生成 Private Key
+3. 安装到主仓库和 fork 仓库
+4. 配置 secrets：
+   - `ISSUELAB_APP_ID`
+   - `ISSUELAB_APP_PRIVATE_KEY`
+
+📖 **完整指南**：[docs/GITHUB_APP_SETUP.md](../docs/GITHUB_APP_SETUP.md)
+
+#### 方式 2：Personal Access Token (PAT)
+
+快速配置选项（适用于测试）：
+
+**配置步骤：**
 
 1. 创建 PAT：https://github.com/settings/tokens (选择 "classic")
    - 权限：`repo` + `workflow`
@@ -118,9 +144,40 @@ if __name__ == "__main__":
 ⚠️ **为什么不能用 `GITHUB_TOKEN`？**
 
 GitHub 的 `GITHUB_TOKEN` 有安全限制，无法触发其他仓库（包括 fork）的 workflow。
-使用 PAT 可以突破这个限制，实现真正的跨仓库 dispatch。
+需要使用 PAT 或 GitHub App 来实现跨仓库 dispatch。
 
-📖 **详细配置指南**：参见 [docs/DISPATCH_SETUP.md](../docs/DISPATCH_SETUP.md)
+---
+
+### 在 Workflow 中的使用
+
+**使用 GitHub App (推荐)：**
+```yaml
+- name: Generate GitHub App Token
+  id: app-token
+  uses: actions/create-github-app-token@v1
+  with:
+    app-id: ${{ secrets.ISSUELAB_APP_ID }}
+    private-key: ${{ secrets.ISSUELAB_APP_PRIVATE_KEY }}
+
+- name: Dispatch
+  env:
+    GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+  run: python scripts/dispatch_to_users.py ...
+```
+
+**使用 PAT：**
+```yaml
+- name: Dispatch
+  env:
+    GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
+  run: python scripts/dispatch_to_users.py ...
+```
+
+---
+
+📖 **详细配置指南**：
+- GitHub App 配置：[docs/GITHUB_APP_SETUP.md](../docs/GITHUB_APP_SETUP.md)
+- Dispatch 配置：[docs/DISPATCH_SETUP.md](../docs/DISPATCH_SETUP.md)
 
 ### 支持的 Dispatch 模式
 

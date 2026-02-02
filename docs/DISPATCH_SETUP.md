@@ -7,7 +7,40 @@ IssueLab 支持两种 Dispatch 模式，用于触发 fork 仓库中的 agent wor
 1. **repository_dispatch** - 适用于主仓库或非 fork 仓库
 2. **workflow_dispatch** - 适用于 fork 仓库（推荐）
 
-## 🔑 前提条件
+## 🔑 认证方式选择
+
+### 方式 1：GitHub App（推荐 ⭐⭐⭐⭐⭐）
+
+**优势：**
+- ✅ 更安全的细粒度权限
+- ✅ Token 自动刷新，无需手动管理
+- ✅ 支持跨账户（fork 仓库）访问
+- ✅ 独立审计日志
+- ✅ 无需共享个人 PAT
+
+**配置指南：** 📖 [GitHub App 完整配置](./GITHUB_APP_SETUP.md)
+
+**快速步骤：**
+1. 创建 GitHub App
+2. 生成 Private Key
+3. 安装到主仓库和 fork 仓库
+4. 配置 secrets：`ISSUELAB_APP_ID` 和 `ISSUELAB_APP_PRIVATE_KEY`
+
+### 方式 2：Personal Access Token (PAT)
+
+**适用场景：**
+- 快速测试
+- 简单的个人项目
+- 不想创建 GitHub App
+
+**限制：**
+- ⚠️ 需要定期手动更新（过期时间）
+- ⚠️ 权限范围较大
+- ⚠️ 依赖个人账户
+
+---
+
+## 🔧 方式 2：配置 PAT Token
 
 ### 1. 配置 PAT Token
 
@@ -22,8 +55,10 @@ IssueLab 支持两种 Dispatch 模式，用于触发 fork 仓库中的 agent wor
 
 2. 添加到仓库 secrets：
    - 访问：https://github.com/gqy20/IssueLab/settings/secrets/actions/new
-   - Name: `PAT_TOKEN`
+   - Name: `PAT_TOKEN`（如使用 PAT）或已配置 GitHub App
    - Secret: 粘贴步骤 1 的 token
+
+⚠️ **如果已配置 GitHub App**，可以跳过此步骤，workflow 会自动使用 App token。
 
 ### 2. 验证 Token 权限
 
