@@ -38,8 +38,8 @@ jobs:
         run: uv sync
 
       # 暂时禁用 MCP 安装以测试性能
-      # - name: Install arxiv-mcp-server
-      #   run: uv tool install arxiv-mcp-server
+      - name: Install arxiv-mcp-server
+        run: uv tool install arxiv-mcp-server
 
       - name: Get Issue content
         id: get_issue
@@ -126,8 +126,8 @@ jobs:
         run: uv sync
 
       # 暂时禁用 MCP 安装以测试性能
-      # - name: Install arxiv-mcp-server
-      #   run: uv tool install arxiv-mcp-server
+      - name: Install arxiv-mcp-server
+        run: uv tool install arxiv-mcp-server
 
       - name: Parse @mentions
         id: parse
@@ -221,8 +221,8 @@ jobs:
         run: uv sync
 
       # 暂时禁用 MCP 安装以测试性能
-      # - name: Install arxiv-mcp-server
-      #   run: uv tool install arxiv-mcp-server
+      - name: Install arxiv-mcp-server
+        run: uv tool install arxiv-mcp-server
 
       - name: Extract command
         id: extract

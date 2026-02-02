@@ -167,16 +167,13 @@ def create_agent_options() -> ClaudeAgentOptions:
     # MCP 服务器配置
     mcp_servers = []
     if os.environ.get("ENABLE_ARXIV_MCP", "true").lower() == "true":
+        # 使用预安装的 arxiv-mcp-server (通过 uv tool install 安装)
+        # 而不是 uv tool run（每次都重新安装，导致超时）
         mcp_servers.append(
             {
                 "name": "arxiv-mcp-server",
-                "command": "uv",
+                "command": "arxiv-mcp-server",  # 直接使用已安装的命令
                 "args": [
-                    "--directory",
-                    str(Path(__file__).parent.parent.parent),
-                    "tool",
-                    "run",
-                    "arxiv-mcp-server",
                     "--storage-path",
                     arxiv_storage_path,
                 ],

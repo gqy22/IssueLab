@@ -34,8 +34,8 @@ jobs:
         run: uv sync
 
       # 暂时禁用 MCP 安装以测试性能
-      # - name: Install arxiv-mcp-server
-      #   run: uv tool install arxiv-mcp-server
+      - name: Install arxiv-mcp-server
+        run: uv tool install arxiv-mcp-server
 
       - name: Get open issues
         id: get_issues
