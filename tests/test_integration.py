@@ -1,6 +1,6 @@
 """集成测试 - 验证模块间协作"""
 from issuelab.agents import discover_agents, load_prompt, normalize_agent_name
-from issuelab.parser import parse_mentions, AGENT_ALIASES
+from issuelab.parser import parse_mentions
 
 
 def test_parser_agent_integration():

@@ -101,7 +101,7 @@ def main():
     observe_parser.add_argument("--post", action="store_true", help="自动发布触发评论到 Issue")
 
     # 列出所有可用 Agent
-    list_parser = subparsers.add_parser("list-agents", help="列出所有可用的 Agent")
+    subparsers.add_parser("list-agents", help="列出所有可用的 Agent")
 
     args = parser.parse_args()
 
@@ -177,7 +177,7 @@ def main():
                 if result.get('comment') and post_comment(args.issue, result['comment']):
                     print(f"\n✅ Trigger comment posted to issue #{args.issue}")
                 else:
-                    print(f"\n❌ Failed to post trigger comment")
+                    print("\n❌ Failed to post trigger comment")
         else:
             print(f"Skip Reason: {result.get('reason', 'N/A')}")
 

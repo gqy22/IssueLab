@@ -1,10 +1,8 @@
 """测试 SDK 执行器"""
-import pytest
 from issuelab.sdk_executor import (
     create_agent_options,
     load_prompt,
     discover_agents,
-    parse_agent_metadata,
 )
 
 

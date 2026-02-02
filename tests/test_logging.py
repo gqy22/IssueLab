@@ -2,7 +2,6 @@
 import logging
 import tempfile
 from pathlib import Path
-import pytest
 from issuelab.logging_config import setup_logging, get_logger
 
 

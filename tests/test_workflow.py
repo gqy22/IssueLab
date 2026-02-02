@@ -1,5 +1,4 @@
 """测试 GitHub Actions 工作流配置"""
-import pytest
 from pathlib import Path
 import re
 

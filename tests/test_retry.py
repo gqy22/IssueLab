@@ -1,6 +1,5 @@
 """测试重试机制"""
 import pytest
-import asyncio
 from issuelab.retry import retry_async, retry_sync, RetryError
 
 

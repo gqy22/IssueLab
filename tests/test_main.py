@@ -1,5 +1,4 @@
 """测试 __main__ 模块功能"""
-import pytest
 from issuelab.__main__ import truncate_text, MAX_COMMENT_LENGTH
 
 
