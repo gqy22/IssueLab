@@ -1,4 +1,5 @@
 """测试提示词模板加载"""
+
 from pathlib import Path
 
 # 提示词目录在项目根目录

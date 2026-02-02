@@ -1,12 +1,14 @@
 """主入口：支持多种子命令"""
-import asyncio
+
 import argparse
+import asyncio
 import os
 import subprocess
 import tempfile
 from pathlib import Path
-from issuelab.sdk_executor import run_agents_parallel, run_observer, get_agent_matrix_markdown, discover_agents
-from issuelab.logging_config import setup_logging, get_logger
+
+from issuelab.logging_config import get_logger, setup_logging
+from issuelab.sdk_executor import discover_agents, get_agent_matrix_markdown, run_agents_parallel, run_observer
 
 # 评论最大长度 (GitHub 限制 65536，实际使用 10000 留余量)
 MAX_COMMENT_LENGTH = 10000
@@ -32,7 +34,7 @@ def truncate_text(text: str, max_length: int = MAX_COMMENT_LENGTH) -> str:
     truncated = text[:available]
 
     # 尝试在最后一个完整段落后截断
-    last_newline = truncated.rfind('\n\n')
+    last_newline = truncated.rfind("\n\n")
 
     if last_newline > available * 0.5:  # 保留至少 50% 的内容
         return truncated[:last_newline].strip() + suffix
@@ -47,7 +49,7 @@ def post_comment(issue_number: int, body: str) -> bool:
     truncated_body = truncate_text(body, MAX_COMMENT_LENGTH)
 
     # 使用临时文件避免命令行长度限制
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
         f.write(truncated_body)
         f.flush()
         # 优先使用 GH_TOKEN，fallback 到 GITHUB_TOKEN
@@ -59,7 +61,7 @@ def post_comment(issue_number: int, body: str) -> bool:
             ["gh", "issue", "comment", str(issue_number), "--body-file", f.name],
             capture_output=True,
             text=True,
-            env=env
+            env=env,
         )
         os.unlink(f.name)
 
@@ -157,24 +159,21 @@ def main():
 
     elif args.command == "observe":
         # 运行 Observer Agent 分析 Issue
-        result = asyncio.run(run_observer(
-            args.issue,
-            getattr(args, "title", "") or "",
-            args.context or "",
-            comments or ""
-        ))
+        result = asyncio.run(
+            run_observer(args.issue, getattr(args, "title", "") or "", args.context or "", comments or "")
+        )
 
         print(f"\n=== Observer Analysis for Issue #{args.issue} ===")
         print(f"\nAnalysis:\n{result.get('analysis', 'N/A')}")
         print(f"\nShould Trigger: {result.get('should_trigger', False)}")
-        if result.get('should_trigger'):
+        if result.get("should_trigger"):
             print(f"Agent: {result.get('agent', 'N/A')}")
             print(f"Trigger Comment: {result.get('comment', 'N/A')}")
             print(f"Reason: {result.get('reason', 'N/A')}")
 
             # 如果需要，自动发布触发评论
             if getattr(args, "post", False):
-                if result.get('comment') and post_comment(args.issue, result['comment']):
+                if result.get("comment") and post_comment(args.issue, result["comment"]):
                     print(f"\n✅ Trigger comment posted to issue #{args.issue}")
                 else:
                     print("\n❌ Failed to post trigger comment")
@@ -188,12 +187,12 @@ def main():
         print(f"{'Agent':<15} {'Description':<50} {'Trigger Conditions'}")
         print("-" * 100)
         for name, config in agents.items():
-            conditions = config.get('trigger_conditions', [])
+            conditions = config.get("trigger_conditions", [])
             if conditions and all(isinstance(c, str) for c in conditions):
                 conditions_str = ", ".join(conditions)
             else:
                 conditions_str = "auto-detect"
-            desc = config.get('description', '')[:48]
+            desc = config.get("description", "")[:48]
             print(f"{name:<15} {desc:<50} {conditions_str[:40]}")
 
         print("\n\n=== Agent Matrix (for Observer) ===\n")

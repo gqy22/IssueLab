@@ -1,4 +1,5 @@
 """测试并行执行器"""
+
 from issuelab.sdk_executor import load_prompt
 
 

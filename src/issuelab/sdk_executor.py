@@ -1,16 +1,18 @@
 """SDK 执行器：使用 Claude Agent SDK 构建评审代理"""
-import re
-import anyio
+
 import os
+import re
 from pathlib import Path
-from typing import Optional
+
+import anyio
 from claude_agent_sdk import (
-    query,
-    ClaudeAgentOptions,
     AgentDefinition,
+    ClaudeAgentOptions,
+    query,
 )
-from issuelab.retry import retry_async
+
 from issuelab.logging_config import get_logger
+from issuelab.retry import retry_async
 
 logger = get_logger(__name__)
 
@@ -18,7 +20,7 @@ logger = get_logger(__name__)
 PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
 
 
-def parse_agent_metadata(content: str) -> Optional[dict]:
+def parse_agent_metadata(content: str) -> dict | None:
     """从 prompt 文件中解析 YAML 元数据
 
     格式：
@@ -31,7 +33,7 @@ def parse_agent_metadata(content: str) -> Optional[dict]:
     ---
     """
     # 匹配 YAML frontmatter
-    match = re.match(r'^---\n(.*?)\n---\n', content, re.DOTALL)
+    match = re.match(r"^---\n(.*?)\n---\n", content, re.DOTALL)
     if not match:
         return None
 
@@ -41,28 +43,28 @@ def parse_agent_metadata(content: str) -> Optional[dict]:
     current_list = []
 
     # 解析 YAML
-    for line in yaml_str.split('\n'):
+    for line in yaml_str.split("\n"):
         line = line.rstrip()
 
         # 检测列表项
-        if line.strip().startswith('- '):
+        if line.strip().startswith("- "):
             item = line.strip()[2:].strip()
             current_list.append(item)
             # 找到最后一个列表键
-            for key in ['trigger_conditions']:
+            for key in ["trigger_conditions"]:
                 if key in metadata:
                     current_list_key = key
             continue
 
         # 检测普通键值对
-        if ':' in line and not line.strip().startswith('-'):
+        if ":" in line and not line.strip().startswith("-"):
             # 先保存之前的列表
             if current_list and current_list_key:
                 metadata[current_list_key] = current_list
                 current_list = []
                 current_list_key = None
 
-            key, value = line.split(':', 1)
+            key, value = line.split(":", 1)
             key = key.strip()
             value = value.strip()
 
@@ -104,7 +106,7 @@ def discover_agents() -> dict:
         if metadata and "agent" in metadata:
             agent_name = metadata["agent"]
             # 移除 frontmatter，获取纯 prompt 内容
-            clean_content = re.sub(r'^---\n.*?\n---\n', '', content, flags=re.DOTALL).strip()
+            clean_content = re.sub(r"^---\n.*?\n---\n", "", content, flags=re.DOTALL).strip()
 
             agents[agent_name] = {
                 "description": metadata.get("description", ""),
@@ -165,29 +167,33 @@ def create_agent_options() -> ClaudeAgentOptions:
     # MCP 服务器配置
     mcp_servers = []
     if os.environ.get("ENABLE_ARXIV_MCP", "true").lower() == "true":
-        mcp_servers.append({
-            "name": "arxiv-mcp-server",
-            "command": "uv",
-            "args": [
-                "--directory",
-                str(Path(__file__).parent.parent.parent),
-                "tool",
-                "run",
-                "arxiv-mcp-server",
-                "--storage-path",
-                arxiv_storage_path,
-            ],
-            "env": env.copy(),
-        })
+        mcp_servers.append(
+            {
+                "name": "arxiv-mcp-server",
+                "command": "uv",
+                "args": [
+                    "--directory",
+                    str(Path(__file__).parent.parent.parent),
+                    "tool",
+                    "run",
+                    "arxiv-mcp-server",
+                    "--storage-path",
+                    arxiv_storage_path,
+                ],
+                "env": env.copy(),
+            }
+        )
 
     # GitHub MCP 服务器配置
     if os.environ.get("ENABLE_GITHUB_MCP", "true").lower() == "true":
-        mcp_servers.append({
-            "name": "github-mcp-server",
-            "command": "npx",
-            "args": ["-y", "@modelcontextprotocol/server-github"],
-            "env": env.copy(),
-        })
+        mcp_servers.append(
+            {
+                "name": "github-mcp-server",
+                "command": "npx",
+                "args": ["-y", "@modelcontextprotocol/server-github"],
+                "env": env.copy(),
+            }
+        )
 
     # 动态获取所有 Agent（排除 observer，它不能自己触发自己）
     agents = discover_agents()
@@ -195,10 +201,10 @@ def create_agent_options() -> ClaudeAgentOptions:
     # GitHub 工具 - 用于搜索开源实现、查看代码仓库
     github_tools = [
         "search_repositories",  # 搜索仓库
-        "get_file_contents",    # 读取文件
-        "list_commits",         # 查看提交历史
-        "search_code",          # 搜索代码
-        "get_issue",            # 获取 Issue
+        "get_file_contents",  # 读取文件
+        "list_commits",  # 查看提交历史
+        "search_code",  # 搜索代码
+        "get_issue",  # 获取 Issue
     ]
     all_tools = ["Read", "Write", "Bash"] + arxiv_tools + github_tools
 
@@ -232,7 +238,7 @@ async def run_single_agent(prompt: str, agent_name: str) -> str:
         代理响应文本
     """
     logger.info(f"开始运行 agent: {agent_name}")
-    
+
     async def _query_agent():
         options = create_agent_options()
         response_text = []
@@ -242,6 +248,7 @@ async def run_single_agent(prompt: str, agent_name: str) -> str:
             options=options,
         ):
             from claude_agent_sdk import AssistantMessage, TextBlock
+
             if isinstance(message, AssistantMessage):
                 for block in message.content:
                     if isinstance(block, TextBlock):
@@ -250,14 +257,9 @@ async def run_single_agent(prompt: str, agent_name: str) -> str:
         result = "\n".join(response_text)
         logger.info(f"Agent {agent_name} 响应完成，长度: {len(result)} 字符")
         return result
-    
+
     try:
-        return await retry_async(
-            _query_agent,
-            max_retries=3,
-            initial_delay=2.0,
-            backoff_factor=2.0
-        )
+        return await retry_async(_query_agent, max_retries=3, initial_delay=2.0, backoff_factor=2.0)
     except Exception as e:
         logger.error(f"Agent {agent_name} 运行失败: {e}", exc_info=True)
         return f"[错误] Agent {agent_name} 执行失败: {e}"
@@ -288,6 +290,7 @@ async def run_agents_parallel(issue_number: int, agents: list[str], context: str
 
     results = {}
     async with anyio.create_task_group() as tg:
+
         async def run_and_store(agent_name: str):
             prompt = base_prompt.format(agent_name=agent_name)
             response = await run_single_agent(prompt, agent_name)

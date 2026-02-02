@@ -1,0 +1,37 @@
+# Pre-commit hooks 配置
+# 安装: uv pip install pre-commit && pre-commit install
+# 手动运行: pre-commit run --all-files
+
+repos:
+  # Ruff - Python linter 和 formatter
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      # Ruff linter
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+        name: ruff (lint + autofix)
+
+      # Ruff formatter
+      - id: ruff-format
+        name: ruff (format)
+
+  # 基础文件检查
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        name: 移除行尾空白
+      - id: end-of-file-fixer
+        name: 确保文件以换行符结尾
+      - id: check-yaml
+        name: 检查 YAML 语法
+      - id: check-toml
+        name: 检查 TOML 语法
+      - id: check-added-large-files
+        args: [--maxkb=1000]
+        name: 检查大文件
+      - id: check-merge-conflict
+        name: 检查合并冲突标记
+      - id: debug-statements
+        name: 检查 debug 语句

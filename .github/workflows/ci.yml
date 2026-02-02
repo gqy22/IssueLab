@@ -49,7 +49,7 @@ jobs:
         run: |
           COVERAGE=$(uv run pytest tests/ --cov=issuelab --cov-report=term-missing | grep "TOTAL" | awk '{print $4}' | sed 's/%//')
           echo "当前覆盖率: ${COVERAGE}%"
-          
+
           THRESHOLD=40
           if (( $(echo "$COVERAGE < $THRESHOLD" | bc -l) )); then
             echo "❌ 测试覆盖率 ${COVERAGE}% 低于阈值 ${THRESHOLD}%"
@@ -147,10 +147,10 @@ jobs:
             echo "❌ Tests failed"
             exit 1
           fi
-          
+
           if [ "${{ needs.build.result }}" != "success" ]; then
             echo "❌ Build failed"
             exit 1
           fi
-          
+
           echo "✅ All quality checks passed"

@@ -1,5 +1,6 @@
 """测试 @mention 解析器"""
-from issuelab.parser import parse_mentions, has_mentions, AGENT_ALIASES
+
+from issuelab.parser import AGENT_ALIASES, has_mentions, parse_mentions
 
 
 def test_parse_single_mention():

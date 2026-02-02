@@ -1,6 +1,6 @@
 """@mention 解析器：从评论中提取代理名称"""
-import re
 
+import re
 
 # 代理名称映射表
 AGENT_ALIASES = {
@@ -24,7 +24,7 @@ AGENT_ALIASES = {
 
 def parse_mentions(comment_body: str) -> list[str]:
     """从评论中解析 @mention"""
-    pattern = r'@([a-zA-Z_]+)'
+    pattern = r"@([a-zA-Z_]+)"
     raw_mentions = re.findall(pattern, comment_body, re.IGNORECASE)
 
     # 映射到标准名称
@@ -47,4 +47,4 @@ def parse_mentions(comment_body: str) -> list[str]:
 
 def has_mentions(comment_body: str) -> bool:
     """检查评论是否包含 @mention"""
-    return bool(re.search(r'@[a-zA-Z_]+', comment_body))
+    return bool(re.search(r"@[a-zA-Z_]+", comment_body))

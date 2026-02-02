@@ -1,9 +1,11 @@
 """GitHub 操作工具"""
-import subprocess
+
 import json
 import os
-from issuelab.retry import retry_sync
+import subprocess
+
 from issuelab.logging_config import get_logger
+from issuelab.retry import retry_sync
 
 logger = get_logger(__name__)
 
@@ -19,8 +21,9 @@ def get_issue_info(issue_number: int) -> dict:
         env["GH_TOKEN"] = token
     result = subprocess.run(
         ["gh", "issue", "view", str(issue_number), "--json", "number,title,body,labels,comments"],
-        capture_output=True, text=True,
-        env=env
+        capture_output=True,
+        text=True,
+        env=env,
     )
     if result.returncode != 0:
         logger.error(f"获取 Issue #{issue_number} 失败: {result.stderr}")
@@ -36,9 +39,7 @@ def post_comment(issue_number: int, body: str) -> str:
     if token:
         env["GH_TOKEN"] = token
     result = subprocess.run(
-        ["gh", "issue", "comment", str(issue_number), "--body", body],
-        capture_output=True, text=True,
-        env=env
+        ["gh", "issue", "comment", str(issue_number), "--body", body], capture_output=True, text=True, env=env
     )
     if result.returncode != 0:
         return f"Error: {result.stderr}"
@@ -54,9 +55,7 @@ def update_label(issue_number: int, label: str, action: str = "add") -> str:
     if token:
         env["GH_TOKEN"] = token
     result = subprocess.run(
-        ["gh", "issue", "edit", str(issue_number), action_flag, label],
-        capture_output=True, text=True,
-        env=env
+        ["gh", "issue", "edit", str(issue_number), action_flag, label], capture_output=True, text=True, env=env
     )
     if result.returncode != 0:
         return f"Error: {result.stderr}"

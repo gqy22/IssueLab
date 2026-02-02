@@ -14,7 +14,7 @@ permissions:
 jobs:
   observer-scan:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -41,7 +41,7 @@ jobs:
               (.labels | map(.name) | contains(["bot:processing", "bot:quiet"]) | not)
             ) | .number' \
             > /tmp/issue_numbers.txt
-          
+
           # 读取 issue 编号
           ISSUE_COUNT=$(wc -l < /tmp/issue_numbers.txt)
           echo "找到 $ISSUE_COUNT 个待观察的 issues"
@@ -56,22 +56,22 @@ jobs:
             if [ -z "$issue_number" ]; then
               continue
             fi
-            
+
             echo "=== 分析 Issue #$issue_number ==="
-            
+
             # 获取 Issue 详情
             ISSUE_TITLE=$(gh issue view "$issue_number" --json title -q '.title')
             ISSUE_BODY=$(gh issue view "$issue_number" --json body -q '.body')
-            
+
             # 获取评论
             gh issue view "$issue_number" \
               --json comments \
               --jq '.comments[] | "- **[\(.author.login)]** (\(.createdAt | strptime("%Y-%m-%dT%H:%M:%SZ") | strftime("%Y-%m-%d %H:%M")):\n\(.body))"' \
               > /tmp/comments_${issue_number}.txt
-            
+
             COMMENT_COUNT=$(gh issue view "$issue_number" --json comments --jq '.comments | length')
             COMMENTS=$(cat /tmp/comments_${issue_number}.txt)
-            
+
             # 运行 Observer Agent
             uv run python -m issuelab observe \
               --issue "$issue_number" \
@@ -80,7 +80,7 @@ jobs:
               --comments "$COMMENTS" \
               --comment-count "$COMMENT_COUNT" \
               --post
-            
+
             echo ""
           done < /tmp/issue_numbers.txt
         env:

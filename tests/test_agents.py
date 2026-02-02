@@ -1,10 +1,11 @@
 """测试代理模块"""
+
 from issuelab.agents import (
-    load_prompt,
     AGENT_ALIASES,
-    normalize_agent_name,
-    get_available_agents,
     discover_agents,
+    get_available_agents,
+    load_prompt,
+    normalize_agent_name,
     parse_agent_metadata,
 )
 
@@ -32,10 +33,10 @@ def test_agent_aliases_mapping():
 def test_discover_agents():
     """测试动态发现功能"""
     agents = discover_agents()
-    
+
     assert isinstance(agents, dict)
     assert len(agents) >= 4
-    
+
     # 验证必需的 agent 都存在
     required_agents = ["moderator", "reviewer_a", "reviewer_b", "summarizer"]
     for agent in required_agents:
@@ -48,12 +49,12 @@ def test_discover_agents():
 def test_agent_metadata_parsing():
     """测试 YAML 元数据解析"""
     agents = discover_agents()
-    
+
     # 验证 observer 存在且触发条件为空列表或 None
     if "observer" in agents:
         trigger = agents["observer"]["trigger_conditions"]
         assert trigger == [] or trigger is None or trigger == "", "Observer should have empty trigger conditions"
-    
+
     # 验证 moderator 有正确的元数据
     assert "moderator" in agents
     assert "分诊" in agents["moderator"]["description"]

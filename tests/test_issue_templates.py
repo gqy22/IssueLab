@@ -1,4 +1,5 @@
 """测试 GitHub Issue 模板"""
+
 from pathlib import Path
 
 # 项目根目录

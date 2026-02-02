@@ -5,14 +5,13 @@
 """
 
 # 直接从 sdk_executor 导入核心功能
+# 从 parser 导入别名配置（单一来源）
+from issuelab.parser import AGENT_ALIASES
 from issuelab.sdk_executor import (
     discover_agents,
     load_prompt,
     parse_agent_metadata,
 )
-
-# 从 parser 导入别名配置（单一来源）
-from issuelab.parser import AGENT_ALIASES
 
 
 def normalize_agent_name(name: str) -> str:
@@ -38,10 +37,10 @@ def get_available_agents() -> list[str]:
 
 
 __all__ = [
-    'discover_agents',
-    'load_prompt',
-    'parse_agent_metadata',
-    'normalize_agent_name',
-    'get_available_agents',
-    'AGENT_ALIASES',
+    "discover_agents",
+    "load_prompt",
+    "parse_agent_metadata",
+    "normalize_agent_name",
+    "get_available_agents",
+    "AGENT_ALIASES",
 ]

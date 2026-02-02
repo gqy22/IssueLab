@@ -1,5 +1,7 @@
 """测试 GitHub 工具"""
-from unittest.mock import patch, MagicMock
+
+from unittest.mock import MagicMock, patch
+
 from issuelab.tools.github import get_issue_info, post_comment, update_label
 
 
@@ -8,8 +10,7 @@ def test_get_issue_info():
     # Mock gh 命令返回
     with patch("issuelab.tools.github.subprocess.run") as mock_run:
         mock_run.return_value = MagicMock(
-            returncode=0,
-            stdout='{"number":1,"title":"测试 Issue","body":"内容","labels":[{"name":"bug"}]}'
+            returncode=0, stdout='{"number":1,"title":"测试 Issue","body":"内容","labels":[{"name":"bug"}]}'
         )
 
         result = get_issue_info(1)
