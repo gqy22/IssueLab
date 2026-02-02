@@ -1,55 +1,22 @@
-"""代理工厂模块：创建和管理评审代理"""
-from pathlib import Path
+"""代理模块：统一的Agent管理接口
 
-# 提示词文件映射
-PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
+本模块提供动态发现和管理评审代理的功能，
+所有Agent通过扫描prompts/目录自动注册。
+"""
 
-PROMPT_FILES = {
-    "moderator": "moderator.md",
-    "reviewer_a": "reviewer_a.md",
-    "reviewer_b": "reviewer_b.md",
-    "summarizer": "summarizer.md",
-}
+# 直接从 sdk_executor 导入核心功能
+from issuelab.sdk_executor import (
+    discover_agents,
+    load_prompt,
+    parse_agent_metadata,
+)
 
-# 代理别名映射表（用于 @mention 解析）
-AGENT_ALIASES = {
-    # Moderator 别名
-    "moderator": "moderator",
-    "mod": "moderator",
-    # ReviewerA 别名
-    "reviewer": "reviewer_a",
-    "reviewera": "reviewer_a",
-    "reviewer_a": "reviewer_a",
-    "reva": "reviewer_a",
-    # ReviewerB 别名
-    "reviewerb": "reviewer_b",
-    "reviewer_b": "reviewer_b",
-    "revb": "reviewer_b",
-    # Summarizer 别名
-    "summarizer": "summarizer",
-    "summary": "summarizer",
-}
-
-
-def load_prompt(agent_name: str) -> str:
-    """加载代理提示词
-
-    Args:
-        agent_name: 代理名称（如 'moderator', 'reviewer_a'）
-
-    Returns:
-        提示词内容，若不存在则返回空字符串
-    """
-    prompt_file = PROMPT_FILES.get(agent_name)
-    if prompt_file:
-        prompt_path = PROMPTS_DIR / prompt_file
-        if prompt_path.exists():
-            return prompt_path.read_text()
-    return ""
+# 从 parser 导入别名配置（单一来源）
+from issuelab.parser import AGENT_ALIASES
 
 
 def normalize_agent_name(name: str) -> str:
-    """标准化代理名称
+    """标准化代理名称（支持别名）
 
     Args:
         name: 原始名称（可能包含别名）
@@ -66,4 +33,15 @@ def get_available_agents() -> list[str]:
     Returns:
         代理名称列表
     """
-    return list(PROMPT_FILES.keys())
+    agents = discover_agents()
+    return list(agents.keys())
+
+
+__all__ = [
+    'discover_agents',
+    'load_prompt',
+    'parse_agent_metadata',
+    'normalize_agent_name',
+    'get_available_agents',
+    'AGENT_ALIASES',
+]

@@ -187,8 +187,6 @@ jobs:
           ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
           ARXIV_STORAGE_PATH: ${{ github.workspace }}/.arxiv-papers
           ENABLE_ARXIV_MCP: true
-          ARXIV_STORAGE_PATH: ${{ github.workspace }}/.arxiv-papers
-          ENABLE_ARXIV_MCP: true
 
   # ========== /command 触发（顺序执行） ==========
   process-command:
@@ -290,8 +288,6 @@ jobs:
           ANTHROPIC_AUTH_KEY: ${{ secrets.ANTHROPIC_AUTH_KEY }}
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
           ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
-          ARXIV_STORAGE_PATH: ${{ github.workspace }}/.arxiv-papers
-          ENABLE_ARXIV_MCP: true
           ARXIV_STORAGE_PATH: ${{ github.workspace }}/.arxiv-papers
           ENABLE_ARXIV_MCP: true
 

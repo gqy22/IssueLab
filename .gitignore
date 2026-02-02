@@ -43,6 +43,9 @@ htmlcov/
 # uv
 .uv/
 
+# Package/build output
+package/
+
 # Local environment variables
 .env
 .env.local

@@ -1,0 +1,68 @@
+"""集成测试 - 验证模块间协作"""
+import pytest
+from issuelab.agents import discover_agents, load_prompt, normalize_agent_name
+from issuelab.parser import parse_mentions, AGENT_ALIASES
+
+
+def test_parser_agent_integration():
+    """测试 parser 和 agents 模块的集成"""
+    # 解析 @mention
+    comment = "@Moderator please review @ReviewerA @revb"
+    agents = parse_mentions(comment)
+    
+    # 验证所有解析的 agent 都存在
+    discovered = discover_agents()
+    for agent in agents:
+        assert agent in discovered, f"Agent {agent} not found in discovered agents"
+
+
+def test_aliases_consistency():
+    """测试别名在不同模块中的一致性"""
+    from issuelab.agents import AGENT_ALIASES as agents_aliases
+    from issuelab.parser import AGENT_ALIASES as parser_aliases
+    
+    # 两个模块应该引用相同的对象
+    assert agents_aliases is parser_aliases
+
+
+def test_end_to_end_agent_loading():
+    """端到端测试：从别名到加载 prompt"""
+    # 使用别名
+    alias = "mod"
+    
+    # 1. 标准化
+    normalized = normalize_agent_name(alias)
+    assert normalized == "moderator"
+    
+    # 2. 加载 prompt
+    prompt = load_prompt(normalized)
+    assert len(prompt) > 0
+    assert "Moderator" in prompt or "分诊" in prompt
+
+
+def test_all_prompts_loadable():
+    """验证所有发现的 agent 都能正确加载 prompt"""
+    agents = discover_agents()
+    
+    for agent_name in agents.keys():
+        prompt = load_prompt(agent_name)
+        assert len(prompt) > 0, f"Agent {agent_name} has empty prompt"
+        assert not prompt.startswith("---"), f"Agent {agent_name} prompt still contains frontmatter"
+
+
+def test_agent_descriptions_present():
+    """验证所有 agent 都有描述信息"""
+    agents = discover_agents()
+    
+    for agent_name, config in agents.items():
+        assert "description" in config, f"Agent {agent_name} missing description"
+        assert len(config["description"]) > 0, f"Agent {agent_name} has empty description"
+
+
+def test_trigger_conditions_format():
+    """验证触发条件格式正确"""
+    agents = discover_agents()
+    
+    for agent_name, config in agents.items():
+        assert "trigger_conditions" in config, f"Agent {agent_name} missing trigger_conditions"
+        assert isinstance(config["trigger_conditions"], list), f"Agent {agent_name} trigger_conditions not a list"

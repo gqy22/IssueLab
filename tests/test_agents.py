@@ -1,6 +1,13 @@
 """测试代理模块"""
 import pytest
-from issuelab.agents import load_prompt, AGENT_ALIASES, normalize_agent_name, get_available_agents
+from issuelab.agents import (
+    load_prompt,
+    AGENT_ALIASES,
+    normalize_agent_name,
+    get_available_agents,
+    discover_agents,
+    parse_agent_metadata,
+)
 
 
 def test_agent_aliases_mapping():
@@ -23,15 +30,73 @@ def test_agent_aliases_mapping():
     assert AGENT_ALIASES["summary"] == "summarizer"
 
 
+def test_discover_agents():
+    """测试动态发现功能"""
+    agents = discover_agents()
+    
+    assert isinstance(agents, dict)
+    assert len(agents) >= 4
+    
+    # 验证必需的 agent 都存在
+    required_agents = ["moderator", "reviewer_a", "reviewer_b", "summarizer"]
+    for agent in required_agents:
+        assert agent in agents, f"Agent {agent} not found"
+        assert "description" in agents[agent]
+        assert "prompt" in agents[agent]
+        assert len(agents[agent]["prompt"]) > 0
+
+
+def test_agent_metadata_parsing():
+    """测试 YAML 元数据解析"""
+    agents = discover_agents()
+    
+    # 验证 observer 存在且触发条件为空
+    if "observer" in agents:
+        assert agents["observer"]["trigger_conditions"] == []
+    
+    # 验证 moderator 有正确的元数据
+    assert "moderator" in agents
+    assert "分诊" in agents["moderator"]["description"]
+
+
+def test_parse_agent_metadata_valid():
+    """测试元数据解析 - 有效输入"""
+    content = """---
+agent: test_agent
+description: Test agent
+trigger_conditions:
+  - condition 1
+  - condition 2
+---
+# Test Prompt
+Some content here
+"""
+    metadata = parse_agent_metadata(content)
+    assert metadata is not None
+    assert metadata["agent"] == "test_agent"
+    assert metadata["description"] == "Test agent"
+    assert metadata["trigger_conditions"] == ["condition 1", "condition 2"]
+
+
+def test_parse_agent_metadata_no_frontmatter():
+    """测试元数据解析 - 无 frontmatter"""
+    content = "# Just a plain prompt without frontmatter"
+    metadata = parse_agent_metadata(content)
+    assert metadata is None
+
+
 def test_load_prompt_returns_string():
-    """load_prompt 应该返回字符串"""
+    """load_prompt 应该返回字符串，不含frontmatter"""
     result = load_prompt("moderator")
     assert isinstance(result, str)
+    assert len(result) > 0
+    # 验证 frontmatter 已被移除
+    assert not result.startswith("---")
 
 
 def test_load_prompt_unknown_agent():
     """load_prompt 对未知代理返回空字符串"""
-    result = load_prompt("unknown_agent")
+    result = load_prompt("unknown_agent_xyz_123")
     assert result == ""
 
 
@@ -42,6 +107,8 @@ def test_normalize_agent_name():
     assert normalize_agent_name("reviewer") == "reviewer_a"
     assert normalize_agent_name("revb") == "reviewer_b"
     assert normalize_agent_name("summary") == "summarizer"
+    # 测试不存在的别名
+    assert normalize_agent_name("unknown") == "unknown"
 
 
 def test_get_available_agents():
@@ -51,4 +118,5 @@ def test_get_available_agents():
     assert "reviewer_a" in agents
     assert "reviewer_b" in agents
     assert "summarizer" in agents
-    assert len(agents) == 4
+    assert "observer" in agents
+    assert len(agents) >= 5
