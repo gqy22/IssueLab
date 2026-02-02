@@ -51,6 +51,8 @@ jobs:
           echo "labels=$labels" >> $GITHUB_OUTPUT
 
       - name: Dispatch to user repositories
+        id: dispatch
+        continue-on-error: true  # 允许部分失败
         env:
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
@@ -73,14 +75,42 @@ jobs:
             ${{ github.event_name == 'issue_comment' && format('--comment-body "{0}"', github.event.comment.body) || '' }} \
             --labels '${{ steps.labels.outputs.labels }}'
 
+      - name: Report dispatch results
+        if: always() && steps.dispatch.outcome != 'skipped'
+        run: |
+          echo "Dispatch completed with status: ${{ steps.dispatch.outcome }}"
+          if [ -n "${{ steps.dispatch.outputs.dispatched_count }}" ]; then
+            echo "Successfully dispatched to ${{ steps.dispatch.outputs.dispatched_count }}/${{ steps.dispatch.outputs.total_count }} agents"
+          fi
+
       - name: Comment on dispatch failure
-        if: failure()
+        if: steps.dispatch.outcome == 'failure' && steps.dispatch.outputs.dispatched_count == '0'
         uses: actions/github-script@v7
         with:
           script: |
-            github.rest.issues.createComment({
+            const totalCount = parseInt('${{ steps.dispatch.outputs.total_count }}') || 0;
+            const dispatchedCount = parseInt('${{ steps.dispatch.outputs.dispatched_count }}') || 0;
+
+            let message = '⚠️ **Agent Dispatch Report**\n\n';
+
+            if (dispatchedCount === 0 && totalCount > 0) {
+              message += `❌ Failed to dispatch to all ${totalCount} matched agents.\n\n`;
+              message += '**Possible reasons:**\n';
+              message += '- Fork repositories require `workflow_dispatch` mode\n';
+              message += '- Target workflows may not be enabled\n';
+              message += '- PAT_TOKEN may lack required permissions (`repo` + `workflow`)\n\n';
+              message += '**For fork repository owners:**\n';
+              message += '1. Update your workflow to use `workflow_dispatch` trigger\n';
+              message += '2. Update your registry file to set `dispatch_mode: workflow_dispatch`\n\n';
+            } else if (dispatchedCount < totalCount) {
+              message += `⚠️ Partially successful: ${dispatchedCount}/${totalCount} agents.\n\n`;
+            }
+
+            message += `[View detailed logs](${context.payload.repository.html_url}/actions/runs/${context.runId})`;
+
+            await github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: '⚠️ Failed to dispatch to some agents. Please check the Actions logs for details.'
-            })
+              body: message
+            });

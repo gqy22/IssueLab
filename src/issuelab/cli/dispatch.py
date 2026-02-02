@@ -8,6 +8,8 @@ import argparse
 import json
 import os
 import sys
+import time
+from functools import wraps
 from pathlib import Path
 from typing import Any
 
@@ -105,9 +107,52 @@ def match_triggers(mentions: list[str], registry: dict[str, dict[str, Any]]) -> 
     return matched
 
 
+def retry_on_failure(max_attempts: int = 3, delay: float = 2, backoff: float = 2):
+    """
+    重试装饰器，用于网络请求失败时自动重试
+
+    Args:
+        max_attempts: 最大重试次数
+        delay: 初始延迟（秒）
+        backoff: 延迟倍增系数
+    """
+
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            current_delay = delay
+            last_exception = None
+
+            for attempt in range(max_attempts):
+                try:
+                    return func(*args, **kwargs)
+                except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+                    last_exception = e
+                    if attempt == max_attempts - 1:
+                        # 最后一次尝试也失败了
+                        raise
+
+                    print(
+                        f"⚠️ Attempt {attempt + 1}/{max_attempts} failed: {e}",
+                        file=sys.stderr,
+                    )
+                    print(f"   Retrying in {current_delay:.1f}s...", file=sys.stderr)
+                    time.sleep(current_delay)
+                    current_delay *= backoff
+
+            # 如果所有尝试都失败了
+            if last_exception:
+                raise last_exception
+
+        return wrapper
+
+    return decorator
+
+
+@retry_on_failure(max_attempts=3, delay=2)
 def dispatch_event(
     repository: str, event_type: str, client_payload: dict[str, Any], token: str, timeout: int = 10
-) -> bool:
+) -> tuple[bool, str]:
     """
     发送 repository_dispatch 事件
 
@@ -119,7 +164,7 @@ def dispatch_event(
         timeout: 超时时间（秒）
 
     Returns:
-        是否成功
+        (是否成功, 错误代码)
     """
     url = f"https://api.github.com/repos/{repository}/dispatches"
 
@@ -134,20 +179,115 @@ def dispatch_event(
     try:
         response = requests.post(url, headers=headers, json=data, timeout=timeout)
         response.raise_for_status()
-        print(f"✓ Dispatched to {repository}")
-        return True
+        print(f"✓ Dispatched to {repository} (repository_dispatch)")
+        return True, ""
 
     except requests.exceptions.HTTPError as e:
-        print(f"✗ HTTP error dispatching to {repository}: {e}", file=sys.stderr)
-        if response.text:
-            print(f"  Response: {response.text}", file=sys.stderr)
-        return False
+        status_code = response.status_code
+        error_msg = response.text if response.text else str(e)
+
+        # 403 错误特殊处理（fork 仓库限制）
+        if status_code == 403:
+            print(f"✗ 403 Forbidden: Cannot dispatch to {repository}", file=sys.stderr)
+            if "fork" in repository.lower() or "personal access token" in error_msg.lower():
+                print("  💡 Suggestion: This may be a fork repository.", file=sys.stderr)
+                print(f"     Ask {repository.split('/')[0]} to configure workflow_dispatch mode.", file=sys.stderr)
+            return False, "FORK_DISPATCH_NOT_ALLOWED"
+
+        # 404 错误（仓库不存在或 workflow 未启用）
+        elif status_code == 404:
+            print(f"✗ 404 Not Found: {repository}", file=sys.stderr)
+            print("  Repository not found or workflow not enabled", file=sys.stderr)
+            return False, "REPOSITORY_NOT_FOUND"
+
+        # 其他 HTTP 错误
+        else:
+            print(f"✗ HTTP {status_code} error: {error_msg}", file=sys.stderr)
+            return False, f"HTTP_{status_code}"
+
     except requests.exceptions.Timeout:
         print(f"✗ Timeout dispatching to {repository}", file=sys.stderr)
-        return False
+        return False, "TIMEOUT"
     except requests.exceptions.RequestException as e:
         print(f"✗ Failed to dispatch to {repository}: {e}", file=sys.stderr)
-        return False
+        return False, "UNKNOWN_ERROR"
+
+
+@retry_on_failure(max_attempts=3, delay=2)
+def dispatch_workflow(
+    repository: str, workflow_file: str, ref: str, inputs: dict[str, Any], token: str, timeout: int = 10
+) -> tuple[bool, str]:
+    """
+    发送 workflow_dispatch 事件（推荐用于 fork 仓库）
+
+    Args:
+        repository: 目标仓库（owner/repo）
+        workflow_file: workflow 文件名（如 "user_agent.yml"）
+        ref: 分支名
+        inputs: workflow 输入参数
+        token: GitHub Token
+        timeout: 超时时间（秒）
+
+    Returns:
+        (是否成功, 错误代码)
+    """
+    url = f"https://api.github.com/repos/{repository}/actions/workflows/{workflow_file}/dispatches"
+
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {token}",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+    # workflow_dispatch 需要 ref 和 inputs
+    # 所有 inputs 必须是字符串类型
+    data = {
+        "ref": ref,
+        "inputs": {
+            "source_repo": str(inputs.get("source_repo", "")),
+            "issue_number": str(inputs.get("issue_number", "")),
+            "issue_title": str(inputs.get("issue_title", "")),
+            "issue_body": str(inputs.get("issue_body", "")),
+            "comment_id": str(inputs.get("comment_id", "")) if inputs.get("comment_id") else "",
+            "comment_body": str(inputs.get("comment_body", "")),
+            "labels": json.dumps(inputs.get("labels", [])),
+            "target_username": str(inputs.get("target_username", "")),
+        },
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=data, timeout=timeout)
+        response.raise_for_status()
+        print(f"✓ Dispatched workflow to {repository} (workflow_dispatch)")
+        return True, ""
+
+    except requests.exceptions.HTTPError as e:
+        status_code = response.status_code
+        error_msg = response.text if response.text else str(e)
+
+        # 404 错误（workflow 文件不存在或未配置 workflow_dispatch）
+        if status_code == 404:
+            print(f"✗ 404 Not Found: {repository}/actions/workflows/{workflow_file}", file=sys.stderr)
+            print("  Workflow file may not exist or workflow_dispatch not configured", file=sys.stderr)
+            return False, "WORKFLOW_NOT_FOUND"
+
+        # 403 错误（权限不足）
+        elif status_code == 403:
+            print(f"✗ 403 Forbidden: Cannot trigger workflow in {repository}", file=sys.stderr)
+            print("  Token may lack 'workflow' permission", file=sys.stderr)
+            return False, "WORKFLOW_PERMISSION_DENIED"
+
+        # 其他 HTTP 错误
+        else:
+            print(f"✗ HTTP {status_code} error: {error_msg}", file=sys.stderr)
+            return False, f"HTTP_{status_code}"
+
+    except requests.exceptions.Timeout:
+        print(f"✗ Timeout dispatching workflow to {repository}", file=sys.stderr)
+        return False, "TIMEOUT"
+    except requests.exceptions.RequestException as e:
+        print(f"✗ Failed to dispatch workflow to {repository}: {e}", file=sys.stderr)
+        return False, "UNKNOWN_ERROR"
 
 
 def write_github_output(dispatched: int, total: int) -> None:
@@ -192,6 +332,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--comment-body", help="Comment body")
     parser.add_argument("--labels", help="Issue labels (JSON array)")
     parser.add_argument("--event-type", default="issue_mention", help="Dispatch event type (default: issue_mention)")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Dry run mode - validate configuration without actually dispatching",
+    )
 
     args = parser.parse_args(argv)
 
@@ -259,13 +404,18 @@ def main(argv: list[str] | None = None) -> int:
 
     # 分发事件
     success_count = 0
+    failed_agents = []
+
     for config in matched_configs:
         repository = config.get("repository")
         branch = config.get("branch", "main")
         username = config.get("username")
+        dispatch_mode = config.get("dispatch_mode", "repository_dispatch")
+        workflow_file = config.get("workflow_file", "user_agent.yml")
 
         if not repository:
-            print(f"Warning: {username} has no repository configured", file=sys.stderr)
+            print(f"⚠️ {username} has no repository configured", file=sys.stderr)
+            failed_agents.append({"username": username, "reason": "No repository configured"})
             continue
 
         # 添加用户特定信息
@@ -273,11 +423,45 @@ def main(argv: list[str] | None = None) -> int:
         payload["target_username"] = username
         payload["target_branch"] = branch
 
-        # 发送 dispatch
-        if dispatch_event(repository, args.event_type, payload, token):
+        # Dry-run 模式
+        if args.dry_run:
+            print(f"[DRY RUN] Would dispatch to {repository}")
+            print(f"  Mode: {dispatch_mode}")
+            print(f"  Branch: {branch}")
+            if dispatch_mode == "workflow_dispatch":
+                print(f"  Workflow file: {workflow_file}")
+            print(f"  Payload keys: {', '.join(payload.keys())}")
             success_count += 1
+            continue
 
-    print(f"\nDispatched to {success_count}/{len(matched_configs)} agents")
+        # 根据模式选择 dispatch 方式
+        success = False
+        error_code = ""
+
+        if dispatch_mode == "workflow_dispatch":
+            # 使用 workflow_dispatch（推荐用于 fork 仓库）
+            success, error_code = dispatch_workflow(repository, workflow_file, branch, payload, token)
+        else:
+            # 使用 repository_dispatch（默认，用于非 fork 仓库）
+            success, error_code = dispatch_event(repository, args.event_type, payload, token)
+
+        if success:
+            success_count += 1
+        else:
+            failed_agents.append({"username": username, "repository": repository, "error": error_code})
+
+    # 输出详细结果
+    print(f"\n{'=' * 60}")
+    print(f"✅ Successfully dispatched to {success_count}/{len(matched_configs)} agents")
+
+    if failed_agents:
+        print(f"❌ Failed agents ({len(failed_agents)}):")
+        for agent in failed_agents:
+            username = agent["username"]
+            error = agent.get("error", agent.get("reason", "Unknown"))
+            print(f"   - {username}: {error}")
+
+    print(f"{'=' * 60}")
 
     # 写入 GitHub Actions 输出
     write_github_output(success_count, len(matched_configs))

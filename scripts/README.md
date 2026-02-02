@@ -119,3 +119,21 @@ if __name__ == "__main__":
 
 GitHub 的 `GITHUB_TOKEN` 有安全限制，无法触发其他仓库（包括 fork）的 workflow。
 使用 PAT 可以突破这个限制，实现真正的跨仓库 dispatch。
+
+📖 **详细配置指南**：参见 [docs/DISPATCH_SETUP.md](../docs/DISPATCH_SETUP.md)
+
+### 支持的 Dispatch 模式
+
+系统支持两种 dispatch 模式：
+
+1. **repository_dispatch** (默认) - 适用于主仓库
+2. **workflow_dispatch** (推荐) - 适用于 fork 仓库
+
+在 `agents/_registry/{username}.yml` 中配置：
+
+```yaml
+username: your_username
+repository: your_username/IssueLab
+dispatch_mode: workflow_dispatch  # 对 fork 仓库使用此模式
+workflow_file: user_agent.yml
+```

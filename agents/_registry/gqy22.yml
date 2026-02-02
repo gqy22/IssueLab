@@ -9,6 +9,11 @@ contact: "vietchuongdhv@vinhuni.edu.vn"
 repository: gqy22/IssueLab
 branch: main
 
+# Dispatch 模式配置（新增）
+# 对于 fork 仓库，推荐使用 workflow_dispatch 模式
+dispatch_mode: workflow_dispatch  # 可选值：repository_dispatch, workflow_dispatch
+workflow_file: user_agent.yml     # 当使用 workflow_dispatch 时指定要触发的 workflow 文件
+
 # 触发条件（必需）
 triggers:
   - "@gqy22"
