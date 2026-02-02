@@ -1,8 +1,16 @@
-name: Run Agent on Repository Dispatch
+name: Run Agent on Workflow Dispatch
 
 on:
-  repository_dispatch:
-    types: [issue_mention]
+  workflow_dispatch:
+    inputs:
+      source_repo:
+        description: 'Source repository (owner/repo)'
+        required: true
+        type: string
+      issue_number:
+        description: 'Issue number'
+        required: true
+        type: number
 
 permissions:
   contents: read
@@ -70,14 +78,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "Running agent for: ${{ steps.agent.outputs.username }}"
-          echo "Source Issue: ${{ github.event.client_payload.source_repo }}#${{ github.event.client_payload.issue_number }}"
+          echo "Source Issue: ${{ inputs.source_repo }}#${{ inputs.issue_number }}"
 
           # TODO: 实现 SDK executor
           # python -m issuelab.sdk_executor \
           #   --agent-config "${{ steps.check.outputs.config_file }}" \
           #   --agent-prompt "${{ steps.check.outputs.prompt_file }}" \
-          #   --source-repo "${{ github.event.client_payload.source_repo }}" \
-          #   --issue-number ${{ github.event.client_payload.issue_number }}
+          #   --source-repo "${{ inputs.source_repo }}" \
+          #   --issue-number ${{ inputs.issue_number }}
 
           echo "Agent execution completed (placeholder)"
 
@@ -87,11 +95,11 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const [owner, repo] = '${{ github.event.client_payload.source_repo }}'.split('/');
+            const [owner, repo] = '${{ inputs.source_repo }}'.split('/');
             await github.rest.issues.createComment({
               owner: owner,
               repo: repo,
-              issue_number: ${{ github.event.client_payload.issue_number }},
+              issue_number: ${{ inputs.issue_number }},
               body: `⚠️ @${{ steps.agent.outputs.username }}'s agent configuration is missing or invalid. Please check your fork.`
             });
 
@@ -101,10 +109,10 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const [owner, repo] = '${{ github.event.client_payload.source_repo }}'.split('/');
+            const [owner, repo] = '${{ inputs.source_repo }}'.split('/');
             await github.rest.issues.createComment({
               owner: owner,
               repo: repo,
-              issue_number: ${{ github.event.client_payload.issue_number }},
+              issue_number: ${{ inputs.issue_number }},
               body: `❌ @${{ steps.agent.outputs.username }}'s agent encountered an error. Please check the [Actions logs](https://github.com/${{ github.repository }}/actions).`
             });
