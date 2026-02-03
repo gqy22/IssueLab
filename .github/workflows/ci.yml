@@ -21,7 +21,7 @@ jobs:
           python-version: '3.13'
           enable-cache: true
       - run: uv sync
-      - run: uv pip install pytest pytest-cov
+      - run: uv pip install pytest pytest-cov pytest-asyncio
 
       - name: Run tests with coverage
         run: |
