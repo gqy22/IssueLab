@@ -17,6 +17,7 @@ runs:
   using: composite
   steps:
     - name: Run agent
+      shell: bash
       run: |
         uv run python -m issuelab execute \
           --issue ${{ inputs.issue-number }} \
