@@ -20,14 +20,12 @@ jobs:
       (github.event_name == 'issue_comment' && !startsWith(github.event.comment.body, '[Agent:'))
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-
-      - name: Install dependencies
-        run: uv sync --frozen
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: '3.13'
+          enable-cache: true
+      - run: uv sync
 
       - name: Parse mentions from Issue
         if: github.event_name == 'issues'
@@ -108,7 +106,7 @@ jobs:
               json.dump(agents_list, f, ensure_ascii=False, separators=(",", ":"))
           print(json.dumps(agents_list, ensure_ascii=False, separators=(",", ":")))
           EOF
-          
+
           agents_json=$(cat /tmp/agents.json)
           echo "agents=$agents_json" >> $GITHUB_OUTPUT
           agent_count=$(echo "$agents_json" | python -c 'import sys, json; print(len(json.load(sys.stdin)))')
@@ -154,15 +152,11 @@ jobs:
           LOG_FILE: ${{ github.workspace }}/logs/dispatch_${{ github.event.issue.number }}.log
           LOG_LEVEL: DEBUG
 
-      # 上传日志文件
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: dispatch-logs-${{ github.event.issue.number }}-${{ github.run_id }}
           path: logs/
           retention-days: 7
-          if-no-files-found: ignore
 
       - name: Report dispatch results
         if: always() && steps.dispatch.outcome != 'skipped'
@@ -178,7 +172,7 @@ jobs:
         run: |
           LOCAL_AGENTS='${{ steps.dispatch.outputs.local_agents }}'
           echo "Running local agents: $LOCAL_AGENTS"
-          
+
           # 解析 JSON 数组并逐个执行
           echo "$LOCAL_AGENTS" | jq -r '.[]' | while read -r agent; do
             echo "[LOCAL] Executing agent: $agent"

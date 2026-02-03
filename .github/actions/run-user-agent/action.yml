@@ -1,0 +1,33 @@
+name: Run User Agent
+
+description: |
+  Checkout + Python + uv + pip install anthropic/PyYAML/PyGithub
+  Used by user_agent.yml workflow for user fork agents.
+
+inputs:
+  python-version:
+    description: Python version
+    default: '3.13'
+    required: false
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v7
+
+    - name: Install dependencies
+      run: |
+        uv pip install --system \
+          anthropic \
+          PyYAML \
+          PyGithub
+      shell: bash

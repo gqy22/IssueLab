@@ -30,27 +30,18 @@ env:
 
 jobs:
   personal-scan:
-    # 🔒 仅在fork仓库运行，不在主仓库运行
+    # 仅在fork仓库运行，不在主仓库运行
     if: github.repository != 'gqy20/IssueLab'
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v7
         with:
-          version: "latest"
+          python-version: '3.13'
           enable-cache: true
-          cache-dependency-glob: "**/pyproject.toml"
-
-      - name: Set up Python
-        run: uv python install 3.12
-
-      - name: Install dependencies
-        run: uv sync
+      - run: uv sync
 
       - name: Detect personal agent
         id: detect_agent
@@ -86,18 +77,18 @@ jobs:
             --json number,title,labels,author \
             --limit 20 \
             > /tmp/issues.json
-          
+
           # 过滤出未参与过的issues
           python - <<EOF
           import json
           import subprocess
-          
+
           with open('/tmp/issues.json') as f:
               issues = json.load(f)
-          
+
           # 获取当前仓库所有者（fork用户）
           repo_owner = "${{ github.repository_owner }}"
-          
+
           # 过滤条件：
           # 1. 不是自己创建的issue
           # 2. 没有bot:quiet标签
@@ -107,28 +98,28 @@ jobs:
               # 检查作者
               if issue.get('author', {}).get('login', '') == repo_owner:
                   continue
-              
+
               # 检查标签
               labels = [l['name'] for l in issue.get('labels', [])]
               if 'bot:quiet' in labels or 'bot:processing' in labels:
                   continue
-              
+
               # TODO: 检查是否已经评论过（需要API调用）
               filtered.append(issue['number'])
-          
+
           # 限制数量
           filtered = filtered[:20]
           issue_numbers = ','.join(map(str, filtered))
-          
+
           print(f"找到 {len(filtered)} 个可能感兴趣的issues")
-          
+
           with open('/tmp/issue_numbers.txt', 'w') as f:
               f.write(issue_numbers)
           EOF
-          
+
           ISSUE_NUMBERS=$(cat /tmp/issue_numbers.txt)
           ISSUE_COUNT=$(echo "$ISSUE_NUMBERS" | tr ',' '\n' | grep -c '^[0-9]' || echo 0)
-          
+
           echo "issue_count=$ISSUE_COUNT" >> $GITHUB_OUTPUT
           echo "issue_numbers=$ISSUE_NUMBERS" >> $GITHUB_OUTPUT
           echo "找到 $ISSUE_COUNT 个候选issues: $ISSUE_NUMBERS"
@@ -142,7 +133,7 @@ jobs:
         run: |
           # 使用个人agent分析哪些issues感兴趣
           echo "=== 使用 ${{ steps.detect_agent.outputs.agent_name }} 分析issues ==="
-          
+
           # 创建personal-scan命令来分析issues
           # TODO: 需要实现personal-scan命令
           uv run python -m issuelab personal-scan \
@@ -151,12 +142,12 @@ jobs:
             --max-replies "${{ env.MAX_ISSUES_TO_REPLY }}" \
             --repo "${{ env.MAIN_REPO }}" \
             > /tmp/scan_results.json || true
-          
+
           # 解析结果
           if [ -f /tmp/scan_results.json ]; then
             SELECTED_ISSUES=$(cat /tmp/scan_results.json | jq -r '.selected_issues | join(",")')
             SELECTED_COUNT=$(echo "$SELECTED_ISSUES" | tr ',' '\n' | grep -c '^[0-9]' || echo 0)
-            
+
             echo "selected_issues=$SELECTED_ISSUES" >> $GITHUB_OUTPUT
             echo "selected_count=$SELECTED_COUNT" >> $GITHUB_OUTPUT
             echo "✅ 选择了 $SELECTED_COUNT 个issues进行回复: $SELECTED_ISSUES"
@@ -177,23 +168,23 @@ jobs:
         run: |
           # 对选中的issues进行回复
           SELECTED_ISSUES="${{ steps.analyze.outputs.selected_issues }}"
-          
+
           echo "=== 开始回复 ${{ steps.analyze.outputs.selected_count }} 个issues ==="
-          
+
           for issue_num in $(echo "$SELECTED_ISSUES" | tr ',' '\n'); do
             echo "📝 回复 Issue #$issue_num..."
-            
+
             # 使用个人agent回复issue
             uv run python -m issuelab personal-reply \
               --agent "${{ steps.detect_agent.outputs.agent_name }}" \
               --issue "$issue_num" \
               --repo "${{ env.MAIN_REPO }}" \
               --post || echo "⚠️ 回复失败"
-            
+
             # 避免触发rate limit
             sleep 5
           done
-          
+
           echo "✅ 完成所有回复"
         env:
           # 优先使用PAT_TOKEN以支持跨仓库评论
@@ -203,14 +194,11 @@ jobs:
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
           ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
 
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: personal-scan-logs-${{ github.run_id }}
           path: logs/
           retention-days: 7
-          if-no-files-found: ignore
 
   # 提示job：如果在主仓库运行，给出提示
   main-repo-notice:

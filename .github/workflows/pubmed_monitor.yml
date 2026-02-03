@@ -14,12 +14,12 @@ on:
       days:
         description: '追溯天数'
         required: false
-        default: '7'
+        default: '1'
         type: string
       max_papers:
         description: '最大文献数（分析前）'
         required: false
-        default: '20'
+        default: '10'
         type: string
 
 concurrency:
@@ -49,12 +49,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-
-      - name: Install dependencies
-        run: uv sync --frozen
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: '3.13'
+          enable-cache: true
+      - run: uv sync
 
       - name: Run PubMed Monitor
         run: |

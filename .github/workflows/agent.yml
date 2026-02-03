@@ -23,17 +23,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-
-      - name: Set up Python
-        run: uv python install 3.13
-
-      - name: Install dependencies
-        run: uv sync
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: '3.13'
+          enable-cache: true
+      - run: uv sync
 
       - name: Get agent name
         id: agent
@@ -82,11 +77,9 @@ jobs:
           ACTIONS_STEP_DEBUG: "true"
           ACTIONS_RUNNER_DEBUG: "true"
 
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: agent-logs-${{ github.event.client_payload.issue_number }}-${{ github.run_id }}
+          name: agent-logs-${{ github.event.client_payload.issue_number }}
           path: logs/
           retention-days: 7
 
@@ -101,7 +94,7 @@ jobs:
             ISSUE_NUMBER="${{ github.event.client_payload.issue_number }}"
             SOURCE_REPO="${{ github.event.client_payload.source_repo }}"
           fi
-          
+
           GH_REPO="$SOURCE_REPO" gh issue comment "$ISSUE_NUMBER" \
             --body "❌ Agent ${{ steps.agent.outputs.name }} execution failed. Check [workflow logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details."
         env:

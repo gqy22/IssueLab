@@ -26,21 +26,12 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v7
         with:
-          version: "latest"
+          python-version: '3.13'
           enable-cache: true
-          cache-dependency-glob: "**/pyproject.toml"
-
-      - name: Set up Python
-        run: uv python install 3.12
-
-      - name: Install dependencies
-        run: uv sync
+      - run: uv sync
 
       - name: Update issue state
         run: |
@@ -78,14 +69,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
 
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: auto-review-logs-${{ github.event.issue.number }}
           path: logs/
           retention-days: 7
-          if-no-files-found: ignore
 
   # ========== @mention 触发：检测并分发 ==========
   detect-mentions:
@@ -157,46 +145,20 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v7
         with:
-          version: "latest"
+          python-version: '3.13'
           enable-cache: true
-          cache-dependency-glob: "**/pyproject.toml"
-
-      - name: Set up Python
-        run: uv python install 3.12
-
-      - name: Install dependencies
-        run: uv sync
-
-      - name: Run moderator
-        run: |
-          uv run python -m issuelab execute \
-            --issue ${{ github.event.issue.number }} \
-            --agents moderator \
-            --post
-        env:
-          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
-          ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
-          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
-          ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
-          LOG_FILE: ${{ github.workspace }}/logs/moderator_${{ github.event.issue.number }}.log
-          LOG_LEVEL: DEBUG
-          CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK: "true"
-          CLAUDE_CODE_STREAM_CLOSE_TIMEOUT: "30000"
-          ACTIONS_STEP_DEBUG: "true"
-          ACTIONS_RUNNER_DEBUG: "true"
-
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@v4
+      - run: uv sync
+      - uses: ./.github/actions/run-agent
+        with:
+          agent-name: moderator
+          issue-number: ${{ github.event.issue.number }}
+      - uses: actions/upload-artifact@v4
         with:
           name: moderator-logs-${{ github.event.issue.number }}
           path: logs/
           retention-days: 7
-          if-no-files-found: ignore
 
   run-reviewer_a:
     needs: detect-mentions
@@ -206,46 +168,20 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v7
         with:
-          version: "latest"
+          python-version: '3.13'
           enable-cache: true
-          cache-dependency-glob: "**/pyproject.toml"
-
-      - name: Set up Python
-        run: uv python install 3.12
-
-      - name: Install dependencies
-        run: uv sync
-
-      - name: Run reviewer_a
-        run: |
-          uv run python -m issuelab execute \
-            --issue ${{ github.event.issue.number }} \
-            --agents reviewer_a \
-            --post
-        env:
-          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
-          ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
-          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
-          ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
-          LOG_FILE: ${{ github.workspace }}/logs/reviewer_a_${{ github.event.issue.number }}.log
-          LOG_LEVEL: DEBUG
-          CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK: "true"
-          CLAUDE_CODE_STREAM_CLOSE_TIMEOUT: "30000"
-          ACTIONS_STEP_DEBUG: "true"
-          ACTIONS_RUNNER_DEBUG: "true"
-
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@v4
+      - run: uv sync
+      - uses: ./.github/actions/run-agent
+        with:
+          agent-name: reviewer_a
+          issue-number: ${{ github.event.issue.number }}
+      - uses: actions/upload-artifact@v4
         with:
           name: reviewer-a-logs-${{ github.event.issue.number }}
           path: logs/
           retention-days: 7
-          if-no-files-found: ignore
 
   run-reviewer_b:
     needs: detect-mentions
@@ -255,46 +191,20 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v7
         with:
-          version: "latest"
+          python-version: '3.13'
           enable-cache: true
-          cache-dependency-glob: "**/pyproject.toml"
-
-      - name: Set up Python
-        run: uv python install 3.12
-
-      - name: Install dependencies
-        run: uv sync
-
-      - name: Run reviewer_b
-        run: |
-          uv run python -m issuelab execute \
-            --issue ${{ github.event.issue.number }} \
-            --agents reviewer_b \
-            --post
-        env:
-          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
-          ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
-          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
-          ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
-          LOG_FILE: ${{ github.workspace }}/logs/reviewer_b_${{ github.event.issue.number }}.log
-          LOG_LEVEL: DEBUG
-          CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK: "true"
-          CLAUDE_CODE_STREAM_CLOSE_TIMEOUT: "30000"
-          ACTIONS_STEP_DEBUG: "true"
-          ACTIONS_RUNNER_DEBUG: "true"
-
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@v4
+      - run: uv sync
+      - uses: ./.github/actions/run-agent
+        with:
+          agent-name: reviewer_b
+          issue-number: ${{ github.event.issue.number }}
+      - uses: actions/upload-artifact@v4
         with:
           name: reviewer-b-logs-${{ github.event.issue.number }}
           path: logs/
           retention-days: 7
-          if-no-files-found: ignore
 
   run-summarizer:
     needs: detect-mentions
@@ -304,42 +214,19 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v7
         with:
-          version: "latest"
+          python-version: '3.13'
           enable-cache: true
-          cache-dependency-glob: "**/pyproject.toml"
-
-      - name: Set up Python
-        run: uv python install 3.12
-
-      - name: Install dependencies
-        run: uv sync
-
-      - name: Run summarizer
-        run: |
-          uv run python -m issuelab execute \
-            --issue ${{ github.event.issue.number }} \
-            --agents summarizer \
-            --post
-        env:
-          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
-          ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
-          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
-          ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
-          LOG_FILE: ${{ github.workspace }}/logs/summarizer_${{ github.event.issue.number }}.log
-          LOG_LEVEL: DEBUG
-          CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK: "true"
-          CLAUDE_CODE_STREAM_CLOSE_TIMEOUT: "30000"
-          ACTIONS_STEP_DEBUG: "true"
-          ACTIONS_RUNNER_DEBUG: "true"
+      - run: uv sync
+      - uses: ./.github/actions/run-agent
+        with:
+          agent-name: summarizer
+          issue-number: ${{ github.event.issue.number }}
 
       - name: Check for auto-close
         if: always()
         run: |
-          # 检查评论中是否包含 [CLOSE] 标记
           LAST_COMMENT=$(gh issue comments ${{ github.event.issue.number }} --repo ${{ github.repository }} --limit 1 --json body -q '.[0].body' 2>/dev/null || echo "")
           if echo "$LAST_COMMENT" | grep -q '\[CLOSE\]'; then
             echo "[INFO] 检测到 [CLOSE] 标记，正在关闭 Issue..."
@@ -351,14 +238,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
 
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: summarizer-logs-${{ github.event.issue.number }}
           path: logs/
           retention-days: 7
-          if-no-files-found: ignore
 
   run-echo:
     needs: detect-mentions
@@ -368,46 +252,20 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v7
         with:
-          version: "latest"
+          python-version: '3.13'
           enable-cache: true
-          cache-dependency-glob: "**/pyproject.toml"
-
-      - name: Set up Python
-        run: uv python install 3.12
-
-      - name: Install dependencies
-        run: uv sync
-
-      - name: Run echo
-        run: |
-          uv run python -m issuelab execute \
-            --issue ${{ github.event.issue.number }} \
-            --agents echo \
-            --post
-        env:
-          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
-          ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
-          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
-          ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
-          LOG_FILE: ${{ github.workspace }}/logs/echo_${{ github.event.issue.number }}.log
-          LOG_LEVEL: DEBUG
-          CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK: "true"
-          CLAUDE_CODE_STREAM_CLOSE_TIMEOUT: "30000"
-          ACTIONS_STEP_DEBUG: "true"
-          ACTIONS_RUNNER_DEBUG: "true"
-
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@v4
+      - run: uv sync
+      - uses: ./.github/actions/run-agent
+        with:
+          agent-name: echo
+          issue-number: ${{ github.event.issue.number }}
+      - uses: actions/upload-artifact@v4
         with:
           name: echo-logs-${{ github.event.issue.number }}
           path: logs/
           retention-days: 7
-          if-no-files-found: ignore
 
   # ========== /command 触发（/review, /quiet, /close, /confirm-close） ==========
   process-command:
@@ -421,21 +279,12 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v7
         with:
-          version: "latest"
+          python-version: '3.13'
           enable-cache: true
-          cache-dependency-glob: "**/pyproject.toml"
-
-      - name: Set up Python
-        run: uv python install 3.12
-
-      - name: Install dependencies
-        run: uv sync
+      - run: uv sync
 
       - name: Extract command
         id: extract
@@ -466,13 +315,9 @@ jobs:
         if: steps.extract.outputs.command == '/close'
         run: |
           echo "[INFO] 收到关闭 Issue 请求，需要确认..."
-
-          # 添加待关闭标签
           gh issue edit ${{ github.event.issue.number }} \
             --add-label "bot:pending-close" \
             --repo ${{ github.repository }}
-
-          # 评论请求确认（使用 heredoc 避免 YAML 解析问题）
           gh issue comment ${{ github.event.issue.number }} \
             --repo ${{ github.repository }} \
             --body - <<-EOF
@@ -489,18 +334,12 @@ jobs:
         if: steps.extract.outputs.command == '/confirm-close'
         run: |
           echo "[OK] 确认关闭 Issue..."
-
-          # 移除待关闭标签
           gh issue edit ${{ github.event.issue.number }} \
             --remove-label "bot:pending-close" \
             --repo ${{ github.repository }}
-
-          # 关闭 Issue
           gh issue close ${{ github.event.issue.number }} \
             --repo ${{ github.repository }} \
             --reason "completed"
-
-          # 评论确认
           gh issue comment ${{ github.event.issue.number }} \
             --repo ${{ github.repository }} \
             --body "[OK] Issue 已由 @${{ github.event.comment.user.login }} 手动关闭"
@@ -514,11 +353,9 @@ jobs:
           gh issue edit ${{ github.event.issue.number }} \
             --add-label "state:review" \
             --repo ${{ github.repository }}
-
           uv run python -m issuelab review \
             --issue ${{ github.event.issue.number }} \
             --post
-
           gh issue edit ${{ github.event.issue.number }} \
             --add-label "bot:needs-summary" \
             --repo ${{ github.repository }}
@@ -534,14 +371,12 @@ jobs:
           ACTIONS_STEP_DEBUG: "true"
           ACTIONS_RUNNER_DEBUG: "true"
 
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: command-logs-${{ github.event.issue.number }}
           path: logs/
           retention-days: 7
-          if-no-files-found: ignore
+
   # ========== Observer 触发：bot:trigger-* 标签 ==========
   observer-triggered-agent:
     if: github.event_name == 'issues' &&
@@ -551,21 +386,12 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v7
         with:
-          version: "latest"
+          python-version: '3.13'
           enable-cache: true
-          cache-dependency-glob: "**/pyproject.toml"
-
-      - name: Set up Python
-        run: uv python install 3.12
-
-      - name: Install dependencies
-        run: uv sync
+      - run: uv sync
 
       - name: Extract agent name from label
         id: extract_agent
@@ -602,11 +428,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
 
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: triggered-agent-logs-${{ steps.extract_agent.outputs.agent_name }}-${{ github.event.issue.number }}
           path: logs/
           retention-days: 7
-          if-no-files-found: ignore

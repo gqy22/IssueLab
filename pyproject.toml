@@ -2,7 +2,7 @@
 name = "issuelab"
 version = "0.1.0"
 description = "AI 辅助科研评审系统"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
     "claude-agent-sdk>=0.1.27",
     "pyyaml>=6.0",
