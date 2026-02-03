@@ -1,14 +1,10 @@
 name: Setup Python Environment
 
 description: |
-  Checkout repository, install uv, Python, and dependencies.
+  Checkout repository, install uv, Python 3.12, and dependencies.
   This is a reusable action for setting up Python environment with uv.
 
 inputs:
-  python-version:
-    description: Python version to install
-    default: '3.12'
-    required: false
   cache-dependency-glob:
     description: Glob pattern for caching dependencies
     default: '**/pyproject.toml'
@@ -35,8 +31,8 @@ runs:
         enable-cache: ${{ inputs.enable-cache }}
         cache-dependency-glob: ${{ inputs.cache-dependency-glob }}
 
-    - name: Set up Python ${{ inputs.python-version }}
-      run: uv python install ${{ inputs.python-version }}
+    - name: Set up Python 3.12
+      run: uv python install 3.12
       shell: bash
 
     - name: Install dependencies
