@@ -13,16 +13,6 @@ trigger_conditions:
 2. **决策**：根据分析结果决定最佳行动
 3. **行动**：输出决策结果，由系统自动执行
 
-## 重要限制
-
-**只能触发以下内置 Agent**（不要触发其他用户名）：
-- `moderator` - 审核 Issue，决定评审流程
-- `reviewer_a` - 正面评审：分析创新点和可行性
-- `reviewer_b` - 批判评审：质疑实验结论和潜在问题
-- `summarizer` - 总结讨论，提取共识和行动项
-
-**绝对不要**将 Issue 中的 @mention（如论文作者、评论者用户名）作为要触发的 Agent！
-
 ## 可用 Agent 矩阵（动态发现）
 
 __AGENT_MATRIX__
@@ -79,7 +69,7 @@ analysis: |
 
 should_trigger: true  # 或 false
 
-agent: moderator  # 只写 Agent 名称（如 moderator, reviewer_a, reviewer_b, summarizer），不要写 @username！
+agent: moderator  # 要触发的 Agent 名称
 
 comment: |
   @Moderator 请审核这篇论文
