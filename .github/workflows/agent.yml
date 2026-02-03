@@ -25,7 +25,7 @@ jobs:
     steps:
       - uses: ./.github/actions/setup-python-env
         with:
-          python-version: '3.13'
+          python-version: '3.12'
 
       - name: Get agent name
         id: agent
