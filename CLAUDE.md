@@ -101,16 +101,16 @@ trigger_conditions:
 
 ### Trigger Mechanisms
 
-1. **@Mention** (via orchestrator.yml):
-   - **内置 Agent** (`@Moderator`, `@ReviewerA`, `@ReviewerB`, `@Summarizer`, `@Observer`): 在主仓库执行
-   - **注册用户** (`@alice`): 通过 `dispatch_agents.yml` dispatch 到用户 fork
-   - **支持别名**: `@mod` → moderator, `@reviewer`/`@reviewera` → reviewer_a, `@reviewerb`/`@revb` → reviewer_b, `@summary` → summarizer
+1. **@Mention** (via orchestrator.yml) - Primary method:
+   - **Built-in agents** (`@Moderator`, `@ReviewerA`, `@ReviewerB`, `@Summarizer`, `@Observer`, `@Echo`, `@Test`): Execute in main repo
+   - **Registered users** (`@alice`): Dispatch to user's fork via `dispatch_agents.yml`
+   - **Aliases**: `@mod` → moderator, `@reviewer`/`@reviewera` → reviewer_a, `@reviewerb`/`@revb` → reviewer_b, `@summary` → summarizer
 
-2. **/Command** (via orchestrator.yml):
+2. **/Command** (via orchestrator.yml) - Workflow commands only:
    - `/review` - Sequential flow: moderator -> reviewer_a -> reviewer_b -> summarizer
-   - `/triage` - Run only moderator
-   - `/summarize` - Run only summarizer
-   - `/echo` - Quick test with echo agent
+   - `/quiet` - Add `bot:quiet` label to silence the bot
+
+   **Deprecated**: `/triage`, `/echo`, `/summarize` - Use `@Moderator`, `@Echo`, `@Summarizer` instead.
 
 3. **Label**:
    - Add `state:ready-for-review` to trigger full review
