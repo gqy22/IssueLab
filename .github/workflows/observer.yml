@@ -18,6 +18,8 @@ permissions:
 
 jobs:
   observer-scan:
+    # 🔒 仅在主仓库运行，避免在fork仓库中不必要的定时执行
+    if: github.repository == 'gqy20/IssueLab'
     runs-on: ubuntu-latest
 
     steps:

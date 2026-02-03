@@ -1,0 +1,220 @@
+name: Personal Agent Scan
+
+# 用户fork后的个人化扫描机制
+# 定期分析主仓库的issues，选择感兴趣的话题参与讨论
+on:
+  schedule:
+    # 每6小时运行一次（避免过于频繁）
+    - cron: '0 */6 * * *'
+  workflow_dispatch:  # 允许手动触发
+    inputs:
+      max_issues:
+        description: '最多回复的issue数量'
+        required: false
+        default: '3'
+        type: number
+
+# 并发控制
+concurrency:
+  group: personal-agent-scan
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: write  # 需要在主仓库发布评论
+
+env:
+  # 主仓库配置（可以被fork用户覆盖）
+  MAIN_REPO: 'gqy20/IssueLab'
+  MAX_ISSUES_TO_REPLY: ${{ github.event.inputs.max_issues || '3' }}
+
+jobs:
+  personal-scan:
+    # 🔒 仅在fork仓库运行，不在主仓库运行
+    if: github.repository != 'gqy20/IssueLab'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+          enable-cache: true
+          cache-dependency-glob: "**/pyproject.toml"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Detect personal agent
+        id: detect_agent
+        run: |
+          # 尝试从agents/目录中检测用户的agent
+          AGENT_DIR="agents"
+          
+          # 查找第一个用户agent配置文件（排除_registry, _template）
+          AGENT_FILE=$(find "$AGENT_DIR" -maxdepth 2 -name "agent.yml" \
+            -not -path "$AGENT_DIR/_registry/*" \
+            -not -path "$AGENT_DIR/_template/*" \
+            | head -n 1)
+          
+          if [ -z "$AGENT_FILE" ]; then
+            echo "⚠️ 未找到用户agent配置，跳过扫描"
+            echo "has_agent=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # 提取agent名称（从目录名）
+          AGENT_NAME=$(dirname "$AGENT_FILE" | xargs basename)
+          echo "✅ 检测到用户agent: $AGENT_NAME"
+          echo "has_agent=true" >> $GITHUB_OUTPUT
+          echo "agent_name=$AGENT_NAME" >> $GITHUB_OUTPUT
+
+      - name: Get open issues from main repo
+        if: steps.detect_agent.outputs.has_agent == 'true'
+        id: get_issues
+        run: |
+          # 获取主仓库的开放issues（排除已参与的）
+          gh issue list \
+            --repo "${{ env.MAIN_REPO }}" \
+            --state open \
+            --json number,title,labels,author \
+            --limit 20 \
+            > /tmp/issues.json
+          
+          # 过滤出未参与过的issues
+          python - <<EOF
+          import json
+          import subprocess
+          
+          with open('/tmp/issues.json') as f:
+              issues = json.load(f)
+          
+          # 获取当前仓库所有者（fork用户）
+          repo_owner = "${{ github.repository_owner }}"
+          
+          # 过滤条件：
+          # 1. 不是自己创建的issue
+          # 2. 没有bot:quiet标签
+          # 3. 没有自己参与过的评论
+          filtered = []
+          for issue in issues:
+              # 检查作者
+              if issue.get('author', {}).get('login', '') == repo_owner:
+                  continue
+              
+              # 检查标签
+              labels = [l['name'] for l in issue.get('labels', [])]
+              if 'bot:quiet' in labels or 'bot:processing' in labels:
+                  continue
+              
+              # TODO: 检查是否已经评论过（需要API调用）
+              filtered.append(issue['number'])
+          
+          # 限制数量
+          filtered = filtered[:20]
+          issue_numbers = ','.join(map(str, filtered))
+          
+          print(f"找到 {len(filtered)} 个可能感兴趣的issues")
+          
+          with open('/tmp/issue_numbers.txt', 'w') as f:
+              f.write(issue_numbers)
+          EOF
+          
+          ISSUE_NUMBERS=$(cat /tmp/issue_numbers.txt)
+          ISSUE_COUNT=$(echo "$ISSUE_NUMBERS" | tr ',' '\n' | grep -c '^[0-9]' || echo 0)
+          
+          echo "issue_count=$ISSUE_COUNT" >> $GITHUB_OUTPUT
+          echo "issue_numbers=$ISSUE_NUMBERS" >> $GITHUB_OUTPUT
+          echo "找到 $ISSUE_COUNT 个候选issues: $ISSUE_NUMBERS"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Analyze issues with personal agent
+        if: steps.detect_agent.outputs.has_agent == 'true' && steps.get_issues.outputs.issue_count > 0
+        id: analyze
+        run: |
+          # 使用个人agent分析哪些issues感兴趣
+          echo "=== 使用 ${{ steps.detect_agent.outputs.agent_name }} 分析issues ==="
+          
+          # 创建personal-scan命令来分析issues
+          # TODO: 需要实现personal-scan命令
+          uv run python -m issuelab personal-scan \
+            --agent "${{ steps.detect_agent.outputs.agent_name }}" \
+            --issues "${{ steps.get_issues.outputs.issue_numbers }}" \
+            --max-replies "${{ env.MAX_ISSUES_TO_REPLY }}" \
+            --repo "${{ env.MAIN_REPO }}" \
+            > /tmp/scan_results.json || true
+          
+          # 解析结果
+          if [ -f /tmp/scan_results.json ]; then
+            SELECTED_ISSUES=$(cat /tmp/scan_results.json | jq -r '.selected_issues | join(",")')
+            SELECTED_COUNT=$(echo "$SELECTED_ISSUES" | tr ',' '\n' | grep -c '^[0-9]' || echo 0)
+            
+            echo "selected_issues=$SELECTED_ISSUES" >> $GITHUB_OUTPUT
+            echo "selected_count=$SELECTED_COUNT" >> $GITHUB_OUTPUT
+            echo "✅ 选择了 $SELECTED_COUNT 个issues进行回复: $SELECTED_ISSUES"
+          else
+            echo "⚠️ 分析失败，跳过"
+            echo "selected_count=0" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANTHROPIC_AUTH_KEY: ${{ secrets.ANTHROPIC_AUTH_KEY }}
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+          ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
+
+      - name: Reply to selected issues
+        if: steps.analyze.outputs.selected_count > 0
+        run: |
+          # 对选中的issues进行回复
+          SELECTED_ISSUES="${{ steps.analyze.outputs.selected_issues }}"
+          
+          echo "=== 开始回复 ${{ steps.analyze.outputs.selected_count }} 个issues ==="
+          
+          for issue_num in $(echo "$SELECTED_ISSUES" | tr ',' '\n'); do
+            echo "📝 回复 Issue #$issue_num..."
+            
+            # 使用个人agent回复issue
+            uv run python -m issuelab personal-reply \
+              --agent "${{ steps.detect_agent.outputs.agent_name }}" \
+              --issue "$issue_num" \
+              --repo "${{ env.MAIN_REPO }}" \
+              --post || echo "⚠️ 回复失败"
+            
+            # 避免触发rate limit
+            sleep 5
+          done
+          
+          echo "✅ 完成所有回复"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANTHROPIC_AUTH_KEY: ${{ secrets.ANTHROPIC_AUTH_KEY }}
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+          ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: personal-scan-logs-${{ github.run_id }}
+          path: logs/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # 提示job：如果在主仓库运行，给出提示
+  main-repo-notice:
+    if: github.repository == 'gqy20/IssueLab'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show notice
+        run: |
+          echo "ℹ️ Personal Agent Scan 设计用于fork仓库"
+          echo "ℹ️ 主仓库请使用 Observer Auto-Trigger workflow"
+          echo "ℹ️ 如需测试，请在fork仓库中运行"

@@ -1,0 +1,42 @@
+# 个人Agent配置示例
+# 用于fork仓库的用户，定义自己感兴趣的话题
+
+name: my_agent
+description: 我的个人研究助手
+
+# 感兴趣的话题关键词（用于筛选issues）
+interests:
+  - machine learning
+  - deep learning
+  - neural networks
+  - computer vision
+  - NLP
+  - transformers
+  - reinforcement learning
+  - LLM
+  - GPT
+  - AI safety
+
+# Agent的专业领域（可选，用于生成更专业的回复）
+expertise:
+  - 深度学习算法
+  - 计算机视觉应用
+  - 自然语言处理
+
+# 回复风格（可选）
+style:
+  tone: professional  # professional, casual, academic
+  language: zh-cn     # 默认语言
+  max_length: 500     # 回复最大长度（字符）
+
+# 触发条件（可选，与interests配合使用）
+trigger_conditions:
+  - "contains:arxiv"
+  - "label:research"
+  - "label:paper-review"
+
+# 个人信息（可选，用于自我介绍）
+author:
+  name: Your Name
+  affiliation: Your Organization
+  github: your_github_username
