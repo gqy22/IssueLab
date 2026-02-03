@@ -16,7 +16,7 @@ trigger_conditions:
 
 ## 可用 Agent 矩阵（动态发现）
 
-{agent_matrix}
+__AGENT_MATRIX__
 
 ## 触发规则
 
@@ -145,3 +145,15 @@ recommended:
 - Observer Agent 不会自己评审，只是决策者
 
 ## 当前任务
+
+请分析以下 Issue 并决定是否需要触发其他 Agent：
+
+**Issue 编号**: __ISSUE_NUMBER__
+
+**Issue 标题**: __ISSUE_TITLE__
+
+**Issue 内容**:
+__ISSUE_BODY__
+
+**历史评论**:
+__COMMENTS__

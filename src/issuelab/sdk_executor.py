@@ -650,16 +650,25 @@ async def run_observer(issue_number: int, issue_title: str = "", issue_body: str
             "error": "Observer agent not found",
         }
 
-    # 动态生成 Agent 矩阵
-    agent_matrix = get_agent_matrix_markdown()
+    # 获取 prompt（移除 frontmatter）
+    prompt_template = observer_config["prompt"]
+    lines = prompt_template.split("\n")
+    content_lines = []
+    in_frontmatter = False
+    for line in lines:
+        if line.strip() == "---":
+            in_frontmatter = not in_frontmatter
+            continue
+        if not in_frontmatter:
+            content_lines.append(line)
+    prompt = "\n".join(content_lines)
 
-    prompt = observer_config["prompt"].format(
-        issue_number=issue_number,
-        issue_title=issue_title,
-        issue_body=issue_body or "无内容",
-        comments=comments or "无评论",
-        agent_matrix=agent_matrix,
-    )
+    # 使用唯一的占位符标记替换
+    prompt = prompt.replace("__ISSUE_NUMBER__", str(issue_number))
+    prompt = prompt.replace("__ISSUE_TITLE__", issue_title)
+    prompt = prompt.replace("__ISSUE_BODY__", issue_body or "无内容")
+    prompt = prompt.replace("__COMMENTS__", comments or "无评论")
+    prompt = prompt.replace("__AGENT_MATRIX__", get_agent_matrix_markdown())
 
     logger.info(f"[Observer] 开始分析 Issue #{issue_number}")
     logger.debug(f"[Observer] Title: {issue_title[:50]}...")
@@ -939,10 +948,8 @@ async def run_observer_for_papers(papers: list[dict]) -> list[dict]:
     papers_context = build_papers_for_observer(papers)
     agent_matrix = get_agent_matrix_markdown()
 
-    # 清理 prompt template 中的 frontmatter，使用 format() 格式化
+    # 获取 prompt（移除 frontmatter）
     prompt_template = observer_config["prompt"]
-
-    # 移除 frontmatter（以 --- 开头的行）
     lines = prompt_template.split("\n")
     content_lines = []
     in_frontmatter = False
@@ -952,16 +959,11 @@ async def run_observer_for_papers(papers: list[dict]) -> list[dict]:
             continue
         if not in_frontmatter:
             content_lines.append(line)
-    clean_prompt = "\n".join(content_lines)
+    prompt = "\n".join(content_lines)
 
-    # 使用 format() 格式化占位符（双重花括号转义）
-    prompt = clean_prompt.format(
-        issue_number="0",
-        issue_title="arXiv 论文智能分析",
-        issue_body=papers_context,
-        comments="无评论",
-        agent_matrix=agent_matrix,
-    )
+    # 使用唯一的占位符标记替换
+    prompt = prompt.replace("__AGENT_MATRIX__", agent_matrix)
+    prompt = prompt.replace("__PAPERS_CONTEXT__", papers_context)
 
     logger.info(f"[Observer] 开始分析 {len(papers)} 篇候选论文")
 

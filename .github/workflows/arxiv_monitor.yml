@@ -42,7 +42,7 @@ jobs:
         uses: astral-sh/setup-uv@v4
 
       - name: Install dependencies
-        run: uv sync --no-dev
+        run: uv sync --frozen
 
       - name: Get last scan time
         id: last_scan
@@ -61,7 +61,7 @@ jobs:
           echo "📥 获取 ${{ env.FETCH_PAPERS }} 篇候选论文供分析"
           echo ""
 
-          python scripts/monitor_arxiv.py \
+          uv run python scripts/monitor_arxiv.py \
             --token "${{ env.GH_TOKEN }}" \
             --repo "${{ github.repository }}" \
             --categories "${{ env.CATEGORIES }}" \
