@@ -36,8 +36,8 @@ def parse_github_mentions(text: str) -> list[str]:
         return []
 
     # 匹配 @username 模式
-    # GitHub 用户名规则：字母、数字、连字符，不能以连字符开头或结尾
-    pattern = r"@([a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)"
+    # GitHub 用户名规则：字母、数字、连字符、下划线，不能以连字符或下划线开头或结尾
+    pattern = r"@([a-zA-Z0-9_](?:[a-zA-Z0-9_-]*[a-zA-Z0-9_])?)"
     matches = re.findall(pattern, text)
 
     # 去重并保持顺序
