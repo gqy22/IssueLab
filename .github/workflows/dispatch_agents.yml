@@ -29,17 +29,29 @@ jobs:
         if: github.event_name == 'issues'
         id: parse_issue
         run: |
+          # 使用临时文件避免多行内容的 shell 解析问题
+          ISSUE_BODY_FILE=$(mktemp)
+          echo -n "${{ github.event.issue.body }}" > "$ISSUE_BODY_FILE"
+
           uv run python scripts/parse_mentions.py \
-            --issue-body "${{ github.event.issue.body }}" \
+            --issue-body-file "$ISSUE_BODY_FILE" \
             --output json
+
+          rm -f "$ISSUE_BODY_FILE"
 
       - name: Parse mentions from Comment
         if: github.event_name == 'issue_comment'
         id: parse_comment
         run: |
+          # 使用临时文件避免多行内容的 shell 解析问题
+          COMMENT_BODY_FILE=$(mktemp)
+          echo -n "${{ github.event.comment.body }}" > "$COMMENT_BODY_FILE"
+
           uv run python scripts/parse_mentions.py \
-            --comment-body "${{ github.event.comment.body }}" \
+            --comment-body-file "$COMMENT_BODY_FILE" \
             --output json
+
+          rm -f "$COMMENT_BODY_FILE"
 
       - name: Get labels
         id: labels
@@ -63,6 +75,9 @@ jobs:
           if agents_dir.exists():
               for user_dir in agents_dir.iterdir():
                   if not user_dir.is_dir():
+                      continue
+                  # 跳过模板目录
+                  if user_dir.name.startswith("_"):
                       continue
                   agent_yml = user_dir / "agent.yml"
                   if not agent_yml.exists():

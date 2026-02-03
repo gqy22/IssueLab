@@ -216,7 +216,7 @@ async def run_agents_parallel(
         agents_context += "\n**协作规则：**\n"
         agents_context += "- 每次回复中最多@2个智能体\n"
         agents_context += "- 仅在确实需要协作时才@，不要无脑@\n"
-        agents_context += "- 示例场景：需要分诊→@gqy20；需要评审→@gqy22\n"
+        agents_context += "- @mention 只能使用上方列出的智能体名称，不能使用其他用户名\n"
 
         task_context += agents_context
 

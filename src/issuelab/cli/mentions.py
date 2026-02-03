@@ -82,13 +82,34 @@ def main(argv: list[str] | None = None) -> int:
     """
     parser = argparse.ArgumentParser(description="Parse @mentions from GitHub Issue/Comment")
     parser.add_argument("--issue-body", help="Issue body text", default="")
+    parser.add_argument("--issue-body-file", help="Issue body text (read from file)", default="")
     parser.add_argument("--comment-body", help="Comment body text", default="")
+    parser.add_argument("--comment-body-file", help="Comment body text (read from file)", default="")
     parser.add_argument("--output", default="csv", choices=["json", "csv", "text"], help="Output format (default: csv)")
 
     args = parser.parse_args(argv)
 
+    # 从文件读取 body 内容
+    issue_body = args.issue_body
+    if args.issue_body_file:
+        try:
+            with open(args.issue_body_file, "r", encoding="utf-8") as f:
+                issue_body = f.read()
+        except Exception as e:
+            print(f"Error reading issue-body-file: {e}", file=sys.stderr)
+            return 1
+
+    comment_body = args.comment_body
+    if args.comment_body_file:
+        try:
+            with open(args.comment_body_file, "r", encoding="utf-8") as f:
+                comment_body = f.read()
+        except Exception as e:
+            print(f"Error reading comment-body-file: {e}", file=sys.stderr)
+            return 1
+
     # 合并 Issue body 和 Comment body
-    text = args.issue_body + "\n" + args.comment_body
+    text = issue_body + "\n" + comment_body
 
     if not text.strip():
         print("Error: No text provided", file=sys.stderr)

@@ -138,7 +138,8 @@ class TestUserAgentTrigger:
         monkeypatch.setenv("GITHUB_REPOSITORY", "test/repo")
         mock_dispatch.return_value = 0
 
-        trigger_user_agent(username="alice", issue_number=123, issue_title="Bug Report", issue_body="Description")
+        # 使用已注册的 agent gqy22
+        trigger_user_agent(username="gqy22", issue_number=123, issue_title="Bug Report", issue_body="Description")
 
         # 验证dispatch被正确调用
         mock_dispatch.assert_called_once()

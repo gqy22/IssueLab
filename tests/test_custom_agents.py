@@ -4,16 +4,12 @@ from issuelab.agents.discovery import discover_agents
 
 
 def test_discover_agents_finds_gqy22():
-    """discover_agents 应该能发现 agents/ 下的 gqy22 代理"""
+    """discover_agents 应该能发现 agents/ 下的 gqy22 代理（使用目录名）"""
     agents = discover_agents()
 
-    # 验证 metadata 中的 agent name 被加载
-    assert "gqy22-reviewer" in agents
-    assert agents["gqy22-reviewer"]["description"] != ""
-
-    # 验证 directory name alias 也被加载
+    # 验证使用目录名作为 agent_id
     assert "gqy22" in agents
     assert agents["gqy22"]["description"] != ""
-
-    # 内容应该一致
-    assert agents["gqy22"]["prompt"] == agents["gqy22-reviewer"]["prompt"]
+    assert len(agents["gqy22"]["prompt"]) > 0
+    # Prompt 应该不包含 frontmatter
+    assert not agents["gqy22"]["prompt"].startswith("---")

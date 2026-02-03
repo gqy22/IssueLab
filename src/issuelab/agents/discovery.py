@@ -106,41 +106,36 @@ def discover_agents() -> dict:
                 "trigger_conditions": metadata.get("trigger_conditions", []),
             }
 
-    # 扫描 agents 目录下的 prompt.md 文件
+    # 扫描 agents 目录下的用户自定义 agent
     if AGENTS_DIR.exists():
+        import yaml
         for agent_dir in AGENTS_DIR.iterdir():
             if not agent_dir.is_dir() or agent_dir.name.startswith("_"):
                 continue
 
+            agent_file = agent_dir / "agent.yml"
             prompt_file = agent_dir / "prompt.md"
-            if prompt_file.exists():
-                content = prompt_file.read_text()
-                metadata = parse_agent_metadata(content)
 
-                if metadata and "agent" in metadata:
-                    # 优先使用 metadata 中的 agent 名，通常应该与目录名（用户 handle）一致
-                    agent_name = metadata["agent"]
+            if not agent_file.exists() or not prompt_file.exists():
+                continue
 
-                    # 如果 metadata 中的名叫 gqy22-reviewer，但目录名叫 gqy22
-                    # 为了兼容 @mention (解析出来是 gqy22)，我们可能需要同时也注册一个 gqy22 的别名
-                    # 但在这里我们暂时信任 metadata 中的名字，或者也可以强制使用目录名
-                    # 这里尝试一个回退策略：如果 URL/CLI 使用的是目录名，但也注册此 agent
+            # 使用目录名作为 agent_id
+            agent_name = agent_dir.name
 
-                    # 移除 frontmatter
-                    clean_content = re.sub(r"^---\n.*?\n---\n", "", content, flags=re.DOTALL).strip()
+            # 从 agent.yml 读取配置
+            with open(agent_file, "r", encoding="utf-8") as f:
+                agent_config = yaml.safe_load(f)
 
-                    agent_data = {
-                        "description": metadata.get("description", ""),
-                        "prompt": clean_content,
-                        "trigger_conditions": metadata.get("trigger_conditions", []),
-                    }
+            # 读取 prompt 内容（移除可能的 frontmatter）
+            prompt_content = prompt_file.read_text()
+            # 移除 frontmatter（兼容旧格式）
+            prompt_content = re.sub(r"^---\n.*?\n---\n", "", prompt_content, flags=re.DOTALL).strip()
 
-                    agents[agent_name] = agent_data
-
-                    # 如果目录名与 agent_name 不同，也注册别名（指向同一个配置）
-                    # 这样 @gqy22 (目录名) 也能找到 agent: gqy22-reviewer
-                    if agent_dir.name != agent_name:
-                        agents[agent_dir.name] = agent_data
+            agents[agent_name] = {
+                "description": agent_config.get("description", ""),
+                "prompt": prompt_content,
+                "trigger_conditions": agent_config.get("triggers", []),
+            }
 
     return agents
 
