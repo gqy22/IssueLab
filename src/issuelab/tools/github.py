@@ -92,12 +92,17 @@ def truncate_text(text: str, max_length: int = MAX_COMMENT_LENGTH) -> str:
     return truncated.strip() + suffix
 
 
-def post_comment(issue_number: int, body: str, auto_truncate: bool = True) -> bool:
+def post_comment(
+    issue_number: int, body: str, mentions: list[str] | None = None, auto_truncate: bool = True
+) -> bool:
     """在 Issue 下发布评论
+
+    新增功能：支持拼接 @ 区域
 
     Args:
         issue_number: Issue 编号
-        body: 评论内容
+        body: 评论内容（主体内容，已清理 @）
+        mentions: 需要 @ 的用户列表（会拼接到评论末尾）
         auto_truncate: 是否自动截断过长内容（默认 True）
 
     Returns:
@@ -105,13 +110,22 @@ def post_comment(issue_number: int, body: str, auto_truncate: bool = True) -> bo
     """
     env = prepare_github_env()
 
+    # 拼接 @ 区域
+    if mentions:
+        from issuelab.response_processor import build_mention_section
+
+        mention_section = build_mention_section(mentions, format_type="labeled")
+        final_body = f"{body}\n\n{mention_section}"
+    else:
+        final_body = body
+
     # 自动截断
     if auto_truncate:
-        body = truncate_text(body, MAX_COMMENT_LENGTH)
+        final_body = truncate_text(final_body, MAX_COMMENT_LENGTH)
 
     # 使用临时文件避免命令行长度限制
     with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
-        f.write(body)
+        f.write(final_body)
         f.flush()
 
         result = subprocess.run(

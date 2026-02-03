@@ -167,13 +167,20 @@ def main():
 
             if processed["mentions"]:
                 print(f"[INFO] 发现 @mentions: {', '.join(processed['mentions'])}")
+                if processed["filtered_mentions"]:
+                    print(f"[FILTER] 过滤了: {', '.join(processed['filtered_mentions'])}")
+                if processed["allowed_mentions"]:
+                    print(f"[ALLOW] 允许: {', '.join(processed['allowed_mentions'])}")
                 for mentioned_user, success in processed["dispatch_results"].items():
                     status = "[OK]" if success else "[ERROR]"
                     print(f"  {status} 触发 {mentioned_user}")
 
             # 如果需要，自动发布到 Issue
             if getattr(args, "post", False):
-                if post_comment(args.issue, response):
+                # 使用清理后的回复 + 拼接 @ 区域
+                if post_comment(
+                    args.issue, processed["clean_response"], mentions=processed["allowed_mentions"]
+                ):
                     print(f"[OK] {agent_name} response posted to issue #{args.issue}")
                 else:
                     print(f"[ERROR] Failed to post {agent_name} response")
