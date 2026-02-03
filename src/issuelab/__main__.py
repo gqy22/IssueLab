@@ -113,8 +113,13 @@ def main():
         results = asyncio.run(run_agents_parallel(args.issue, agents, context, comment_count))
 
         # 输出结果
-        for agent_name, response in results.items():
-            print(f"\n=== {agent_name} result ===")
+        for agent_name, result in results.items():
+            response = result.get("response", str(result))
+            cost_usd = result.get("cost_usd", 0.0)
+            num_turns = result.get("num_turns", 0)
+            tool_calls = len(result.get("tool_calls", []))
+
+            print(f"\n=== {agent_name} result (成本: ${cost_usd:.4f}, 轮数: {num_turns}, 工具: {tool_calls}) ===")
             print(response)
 
             # 如果需要，自动发布到 Issue
@@ -129,8 +134,13 @@ def main():
         agents = ["moderator", "reviewer_a", "reviewer_b", "summarizer"]
         results = asyncio.run(run_agents_parallel(args.issue, agents, context, comment_count))
 
-        for agent_name, response in results.items():
-            print(f"\n=== {agent_name} result ===")
+        for agent_name, result in results.items():
+            response = result.get("response", str(result))
+            cost_usd = result.get("cost_usd", 0.0)
+            num_turns = result.get("num_turns", 0)
+            tool_calls = len(result.get("tool_calls", []))
+
+            print(f"\n=== {agent_name} result (成本: ${cost_usd:.4f}, 轮数: {num_turns}, 工具: {tool_calls}) ===")
             print(response)
 
             # 如果需要，自动发布到 Issue

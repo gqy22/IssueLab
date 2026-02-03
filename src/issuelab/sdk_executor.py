@@ -443,24 +443,24 @@ async def run_single_agent(prompt: str, agent_name: str) -> dict:
 
             # ResultMessage: 执行结果（成本、统计信息）
             elif isinstance(message, ResultMessage):
-                # 安全获取属性（不同版本可能字段不同）
-                local_id = getattr(message, "local_id", "") or ""
-                cost_usd = getattr(message, "total_cost_usd", 0.0) or 0.0
-                num_turns = getattr(message, "num_turns", turn_count) or turn_count
+                # ResultMessage 字段: session_id, num_turns, total_cost_usd, duration_ms, usage
+                session_id = message.session_id or ""
+                cost_usd = message.total_cost_usd or 0.0
+                result_turns = message.num_turns or turn_count
 
-                execution_info["local_id"] = local_id
+                execution_info["session_id"] = session_id
                 execution_info["cost_usd"] = cost_usd
-                execution_info["num_turns"] = turn_count
+                execution_info["num_turns"] = result_turns
 
                 # 只在第一次收到 ResultMessage 时记录
                 if first_result:
-                    logger.info(f"[{agent_name}] [Result] local_id={local_id}")
+                    logger.info(f"[{agent_name}] [Result] session_id={session_id}")
                     first_result = False
 
                 # 记录成本和统计
                 logger.info(
                     f"[{agent_name}] [Stats] 成本: ${cost_usd:.4f}, "
-                    f"轮数: {turn_count}, 工具调用: {len(tool_calls)}"
+                    f"轮数: {result_turns}, 工具调用: {len(tool_calls)}"
                 )
 
         result = "\n".join(response_text)
@@ -487,7 +487,7 @@ async def run_single_agent(prompt: str, agent_name: str) -> dict:
             "cost_usd": 0.0,
             "num_turns": 0,
             "tool_calls": [],
-            "local_id": "",
+            "session_id": "",
             "text_blocks": [],
         }
 
