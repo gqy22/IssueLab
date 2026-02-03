@@ -407,13 +407,14 @@ def dispatch_workflow(
         return False, "UNKNOWN_ERROR"
 
 
-def write_github_output(dispatched: int, total: int) -> None:
+def write_github_output(dispatched: int, total: int, local_agents: list[str] | None = None) -> None:
     """
     写入 GitHub Actions 输出变量
 
     Args:
         dispatched: 成功分发的数量
         total: 总匹配数量
+        local_agents: 需要本地执行的 Agent 列表
     """
     if "GITHUB_OUTPUT" not in os.environ:
         return
@@ -422,6 +423,10 @@ def write_github_output(dispatched: int, total: int) -> None:
         with open(os.environ["GITHUB_OUTPUT"], "a") as f:
             f.write(f"dispatched_count={dispatched}\n")
             f.write(f"total_count={total}\n")
+            if local_agents:
+                f.write(f"local_agents={json.dumps(local_agents)}\n")
+            else:
+                f.write("local_agents=[]\n")
     except OSError as e:
         print(f"Warning: Failed to write GitHub output: {e}", file=sys.stderr)
 
@@ -577,6 +582,7 @@ def main(argv: list[str] | None = None) -> int:
     # 分发事件
     success_count = 0
     failed_agents = []
+    local_agents = []  # 需要本地执行的 Agent
 
     for config in matched_configs:
         repository = config.get("repository")
@@ -590,9 +596,11 @@ def main(argv: list[str] | None = None) -> int:
             failed_agents.append({"username": username, "reason": "No repository configured"})
             continue
 
-        # 跳过源仓库本身（避免自我 dispatch）
+        # 检测主仓库 Agent → 标记为本地执行（不走 API dispatch）
         if repository == args.source_repo:
-            print(f"[WARNING] Skipping {username}: Cannot dispatch to source repository itself", file=sys.stderr)
+            print(f"[LOCAL] {username} will run locally (same repository)", file=sys.stderr)
+            local_agents.append(username)
+            success_count += 1
             continue
 
         # 添加用户特定信息
@@ -655,8 +663,12 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"{'=' * 60}")
 
+    # 输出本地 Agent 列表
+    if local_agents:
+        print(f"[LOCAL] Agents to run locally: {', '.join(local_agents)}")
+
     # 写入 GitHub Actions 输出
-    write_github_output(success_count, len(matched_configs))
+    write_github_output(success_count, len(matched_configs), local_agents)
 
     return 0 if success_count > 0 else 1
 

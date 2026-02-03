@@ -12,6 +12,8 @@ import re
 import subprocess
 from typing import Any
 
+from issuelab.mention_policy import filter_mentions, load_mention_policy
+
 logger = logging.getLogger(__name__)
 
 
@@ -48,38 +50,116 @@ def extract_mentions(text: str) -> list[str]:
     return list(dict.fromkeys(matches))
 
 
-def trigger_mentioned_agents(
-    response: str, issue_number: int, issue_title: str, issue_body: str
-) -> dict[str, bool]:
+def clean_mentions_in_text(text: str, replacement: str = "用户 {username}") -> str:
+    """清理文本中的所有 @mentions
+
+    将文本中的 @username 替换为指定格式，默认替换为 "用户 username"
+
+    Args:
+        text: 原始文本
+        replacement: 替换格式，可使用 {username} 占位符
+
+    Returns:
+        清理后的文本
+
+    Examples:
+        >>> clean_mentions_in_text("建议 @gqy20 确认设计")
+        '建议用户 gqy20 确认设计'
+        >>> clean_mentions_in_text("建议 @gqy20 确认", "{username}")
+        '建议 gqy20 确认'
     """
-    解析agent response中的@mentions并触发对应的agent
+    if not text:
+        return text
+
+    pattern = r"@([a-zA-Z0-9_-]+)"
+
+    def replace_fn(match):
+        username = match.group(1)
+        # 过滤纯数字（不是有效的 GitHub 用户名）
+        if username.isdigit():
+            return match.group(0)  # 保持原样
+        return replacement.format(username=username)
+
+    return re.sub(pattern, replace_fn, text)
+
+
+def build_mention_section(mentions: list[str], format_type: str = "labeled") -> str:
+    """构建 @ 区域
+
+    Args:
+        mentions: @mentions 列表
+        format_type: 格式类型
+            - labeled: "---\n相关人员: @user1 @user2"
+            - simple: "---\n@user1 @user2"
+            - list: "---\n协作请求:\n- @user1\n- @user2"
+
+    Returns:
+        @ 区域文本（如果 mentions 为空则返回空字符串）
+
+    Examples:
+        >>> build_mention_section(['gqy20', 'gqy22'])
+        '---\n相关人员: @gqy20 @gqy22'
+        >>> build_mention_section(['gqy20'], 'simple')
+        '---\n@gqy20'
+    """
+    if not mentions:
+        return ""
+
+    if format_type == "labeled":
+        return f"---\n相关人员: {' '.join(f'@{m}' for m in mentions)}"
+    elif format_type == "simple":
+        return f"---\n{' '.join(f'@{m}' for m in mentions)}"
+    elif format_type == "list":
+        items = "\n".join(f"- @{m}" for m in mentions)
+        return f"---\n协作请求:\n{items}"
+    else:
+        # 默认使用 labeled 格式
+        return f"---\n相关人员: {' '.join(f'@{m}' for m in mentions)}"
+
+
+def trigger_mentioned_agents(
+    response: str, issue_number: int, issue_title: str, issue_body: str, policy: dict | None = None
+) -> tuple[dict[str, bool], list[str], list[str]]:
+    """
+    解析agent response中的@mentions，应用策略过滤，并触发允许的agent
 
     Args:
         response: Agent的response内容
         issue_number: Issue编号
         issue_title: Issue标题
         issue_body: Issue内容
+        policy: @ 策略配置（None 则自动加载）
 
     Returns:
-        触发结果字典 {username: success}
+        (results, allowed_mentions, filtered_mentions) 元组
+        - results: 触发结果字典 {username: success}
+        - allowed_mentions: 允许的 @mentions 列表
+        - filtered_mentions: 被过滤的 @mentions 列表
     """
     mentions = extract_mentions(response)
 
     if not mentions:
         logger.info("[INFO] Response中没有@mentions")
-        return {}
+        return {}, [], []
 
     logger.info(f"[INFO] 发现 {len(mentions)} 个@mentions: {mentions}")
+
+    # 应用策略过滤
+    allowed_mentions, filtered_mentions = filter_mentions(mentions, policy)
+
+    if filtered_mentions:
+        logger.info(f"[FILTER] 过滤了 {len(filtered_mentions)} 个@mentions: {filtered_mentions}")
+
+    if not allowed_mentions:
+        logger.info("[INFO] 没有允许的@mentions")
+        return {}, [], filtered_mentions
+
+    logger.info(f"[INFO] 允许触发 {len(allowed_mentions)} 个@mentions: {allowed_mentions}")
 
     from issuelab.observer_trigger import auto_trigger_agent
 
     results = {}
-    for username in mentions:
-        # 排除常见的非agent mentions（如GitHub bot账号）
-        if username.lower() in ["github", "github-actions", "dependabot"]:
-            logger.info(f"[SKIP] 跳过系统账号: {username}")
-            continue
-
+    for username in allowed_mentions:
         logger.info(f"[INFO] 触发被@的agent: {username}")
         success = auto_trigger_agent(
             agent_name=username,
@@ -94,7 +174,7 @@ def trigger_mentioned_agents(
         else:
             logger.error(f"[ERROR] 触发 {username} 失败")
 
-    return results
+    return results, allowed_mentions, filtered_mentions
 
 
 def process_agent_response(
@@ -108,6 +188,12 @@ def process_agent_response(
     """
     处理agent response的后处理逻辑
 
+    新增功能：
+    1. 清理主体内容中的所有 @mentions（替换为"用户 xxx"）
+    2. 应用策略过滤，区分允许和被过滤的 mentions
+    3. 触发允许的 agents
+    4. 返回清理后的主体内容和 mentions 信息
+
     Args:
         agent_name: Agent名称
         response: Agent的response（字符串或dict）
@@ -119,30 +205,42 @@ def process_agent_response(
     Returns:
         处理结果 {
             "agent_name": str,
-            "response": str,
-            "mentions": list[str],
-            "dispatch_results": dict[str, bool]
+            "response": str,  # 原始回复
+            "clean_response": str,  # 清理后的回复（所有 @ 替换为"用户 xxx"）
+            "mentions": list[str],  # 所有提取的 mentions
+            "allowed_mentions": list[str],  # 允许的 mentions
+            "filtered_mentions": list[str],  # 被过滤的 mentions
+            "dispatch_results": dict[str, bool]  # 触发结果
         }
     """
     # 提取response文本
     response_text = response.get("response", str(response)) if isinstance(response, dict) else str(response)
 
-    # 解析@mentions
+    # 提取所有 @mentions
     mentions = extract_mentions(response_text)
+
+    # 清理主体内容（将所有 @username 替换为 "用户 username"）
+    clean_response = clean_mentions_in_text(response_text)
 
     result = {
         "agent_name": agent_name,
         "response": response_text,
+        "clean_response": clean_response,
         "mentions": mentions,
+        "allowed_mentions": [],
+        "filtered_mentions": [],
         "dispatch_results": {},
     }
 
     # 自动触发被@的agents
     if auto_dispatch and mentions:
         logger.info(f"🔗 {agent_name} 的response中@了 {len(mentions)} 个用户")
-        result["dispatch_results"] = trigger_mentioned_agents(
+        dispatch_results, allowed_mentions, filtered_mentions = trigger_mentioned_agents(
             response_text, issue_number, issue_title, issue_body
         )
+        result["dispatch_results"] = dispatch_results
+        result["allowed_mentions"] = allowed_mentions
+        result["filtered_mentions"] = filtered_mentions
 
     return result
 

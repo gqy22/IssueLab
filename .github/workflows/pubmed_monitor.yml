@@ -1,0 +1,72 @@
+name: PubMed Monitor
+
+on:
+  schedule:
+    # 每天早上 8 点运行一次
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+    inputs:
+      query:
+        description: 'PubMed 检索词'
+        required: false
+        default: '(speciation) OR (hybrid speciation) OR (introgression)'
+        type: string
+      days:
+        description: '追溯天数'
+        required: false
+        default: '7'
+        type: string
+      max_papers:
+        description: '最大文献数（分析前）'
+        required: false
+        default: '20'
+        type: string
+
+concurrency:
+  group: pubmed-monitor
+  cancel-in-progress: true
+
+permissions:
+  issues: write
+  contents: read
+
+env:
+  QUERY: ${{ github.event.inputs.query || '(speciation) OR (hybrid speciation) OR (introgression)' }}
+  DAYS: ${{ github.event.inputs.days || '1' }}
+  MAX_PAPERS: ${{ github.event.inputs.max_papers || '10' }}
+  GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+  LOG_LEVEL: DEBUG
+  PUBMED_EMAIL: ${{ secrets.PUBMED_EMAIL }}
+  # Anthropic API 配置
+  ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
+  ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+  ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
+  CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK: "true"
+
+jobs:
+  monitor:
+    if: github.repository == 'gqy20/IssueLab'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run PubMed Monitor
+        run: |
+          echo "🔍 扫描 PubMed 新文献..."
+          echo "📊 检索词: ${{ env.QUERY }}"
+          echo "📅 追溯天数: ${{ env.DAYS }}"
+          echo ""
+
+          uv run python scripts/monitor_pubmed.py \
+            --token "${{ env.GH_TOKEN }}" \
+            --repo "${{ github.repository }}" \
+            --query "${{ env.QUERY }}" \
+            --days ${{ env.DAYS }} \
+            --max-papers ${{ env.MAX_PAPERS }} \
+            --email "${{ env.PUBMED_EMAIL }}"
