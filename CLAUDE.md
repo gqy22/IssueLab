@@ -75,7 +75,7 @@ trigger_conditions:
 - `summarizer` - Consensus extraction, action item generation
 - `observer` - Analyzes issues, decides agent triggering
 
-**User Custom Agents:** Fork the repo, add `agents/<username>/prompt.md`, register in `agents/_registry/*.yml`.
+**User Custom Agents:** Fork the repo, add `agents/<username>/agent.yml` and `agents/<username>/prompt.md`.
 
 **Aliases:** `mod`, `reviewer`/`reviewera`, `reviewerb`/`revb`, `summary`
 
@@ -117,11 +117,12 @@ SCENE_CONFIGS = {
 ### Distributed Execution (Plan B)
 
 Cross-repository agent dispatch via GitHub App:
-- **Registry:** `agents/_registry/*.yml` maps users to forks
+- **Registry:** `agents/<username>/agent.yml` maps users to forks
 - **Dispatch:** `repository_dispatch` or `workflow_dispatch`
 - **DISPATCH_TOKEN:** Fine-grained PAT for triggering user forks
 
 **User fork requirements:**
 - `ANTHROPIC_API_TOKEN` in fork secrets
 - `.github/workflows/user_agent.yml`
+- `agents/<username>/agent.yml`
 - `agents/<username>/prompt.md`

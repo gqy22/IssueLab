@@ -152,39 +152,22 @@ git push origin main
 
 ### 步骤 7：注册到主系统
 
-创建注册文件并提交 PR：
+创建智能体文件夹并提交 PR：
 
 ```bash
-# 创建注册文件
-cat > agents/_registry/YOUR_GITHUB_ID.yml <<EOF
-# 用户智能体注册信息
-username: YOUR_GITHUB_ID
-display_name: "你的名字"
-contact: "your.email@example.com"
+# 创建智能体文件夹
+mkdir -p agents/YOUR_GITHUB_ID
 
-# Fork 仓库
-repository: YOUR_GITHUB_ID/IssueLab
-branch: main
+# 复制模板并修改
+cp agents/_template/agent.yml agents/YOUR_GITHUB_ID/agent.yml
+cp agents/_template/prompt.md agents/YOUR_GITHUB_ID/prompt.md
 
-# 触发条件
-triggers:
-  - "@YOUR_GITHUB_ID"
-
-# 状态
-enabled: true
-
-# 速率限制
-rate_limit:
-  max_calls_per_hour: 10
-  max_calls_per_day: 50
-
-# 备注
-description: "你的智能体简介"
-EOF
+# 修改 agent.yml 中的配置（owner, repository, triggers 等）
+# 编辑 prompt.md 自定义智能体行为
 
 # 提交并推送
-git add agents/_registry/YOUR_GITHUB_ID.yml
-git commit -m "Register my agent to main system"
+git add agents/YOUR_GITHUB_ID/
+git commit -m "Add my agent: YOUR_GITHUB_ID"
 git push origin main
 ```
 
@@ -211,18 +194,18 @@ PR 合并后，你的智能体就接入主系统了！
 
 ### 工作原理
 
-使用 **GitHub Repository Dispatch** 实现跨仓库触发：
+使用 **GitHub Repository/Workflow Dispatch** 实现跨仓库触发：
 
 ```
 1. 主仓库 Issue: "@alice 帮我分析"
          ↓
 2. 主仓库 Actions 触发
          ↓
-3. 读取 agents/_registry/alice.yml
+3. 读取 agents/alice/agent.yml
          ↓
 4. 检测到 "@alice" 匹配
          ↓
-5. 发送 repository_dispatch 到 alice/IssueLab
+5. 发送 dispatch 到 alice/IssueLab
          ↓ (跨仓库事件)
 6. alice/IssueLab 的 Actions 触发
          ↓
@@ -243,13 +226,14 @@ PR 合并后，你的智能体就接入主系统了！
 
 ### 关键配置
 
-**注册文件（agents/_registry/alice.yml）：**
+**智能体配置文件（agents/alice/agent.yml）：**
 ```yaml
-username: alice
-repository: alice/IssueLab  # Alice 的 fork
+owner: alice                           # 你的 GitHub ID
+repository: alice/IssueLab              # 你的 fork 仓库
 triggers:
-  - "@alice"               # 触发条件
+  - "@alice"                           # 触发条件
 enabled: true
+dispatch_mode: workflow_dispatch        # dispatch 方式
 ```
 
 **为什么这样设计？**
@@ -262,8 +246,8 @@ enabled: true
 
 **Alice 注册后：**
 1. 在主仓库任何 Issue 中 @alice
-2. 主仓库 Actions 读取 `_registry/alice.yml`
-3. 向 `alice/IssueLab` 发送 repository_dispatch
+2. 主仓库 Actions 读取 `agents/alice/agent.yml`
+3. 向 `alice/IssueLab` 发送 dispatch
 4. Alice fork 的 Actions 自动运行
 5. 使用 Alice 的 ANTHROPIC_API_TOKEN
 6. 结果回传到主仓库

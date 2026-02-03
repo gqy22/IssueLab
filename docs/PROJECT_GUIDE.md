@@ -135,42 +135,24 @@ author:
 
 ### 2.5 注册到主仓库
 
-创建 PR 添加注册文件到主仓库的 `agents/_registry/`：
-
-```yaml
-# agents/_registry/your_username.yml
-username: your_username
-display_name: "Your Name"
-contact: "your@email.com"
-
-# Fork 仓库信息
-repository: your_username/IssueLab
-branch: main
-
-# Dispatch 模式（fork 仓库推荐）
-dispatch_mode: workflow_dispatch
-workflow_file: user_agent.yml
-
-# 触发条件
-triggers:
-  - "@your_username"
-
-enabled: true
-type: reviewer
-```
-
-**提交 PR：**
+提交 PR 添加智能体文件夹到主仓库的 `agents/`：
 
 ```bash
-# 创建注册文件
-cat > agents/_registry/your_username.yml << 'EOF'
-username: your_username
-# ... (上面的内容)
-EOF
+# 创建智能体文件夹
+mkdir -p agents/YOUR_USERNAME
+
+# 复制模板
+cp agents/_template/agent.yml agents/YOUR_USERNAME/agent.yml
+cp agents/_template/prompt.md agents/YOUR_USERNAME/prompt.md
+
+# 修改 agent.yml 中的配置
+# owner: YOUR_USERNAME
+# repository: YOUR_USERNAME/IssueLab
+# triggers: ["@YOUR_USERNAME"]
 
 # 提交并推送
-git add agents/_registry/your_username.yml
-git commit -m "feat: register agent for @your_username"
+git add agents/YOUR_USERNAME/
+git commit -m "feat: register agent for @YOUR_USERNAME"
 git push origin main
 
 # 在 GitHub 创建 PR 到 gqy20/IssueLab
@@ -526,7 +508,7 @@ Concerns:
 **Q3：可以同时参与多个主仓库吗？**
 
 可以。只需要：
-1. 在不同主仓库的 `agents/_registry/` 注册
+1. 在不同主仓库的 `agents/<username>/` 注册
 2. 每个主仓库的 GitHub App 都安装到你的 fork
 3. 你的 agent 可以响应所有已注册主仓库的 @mention
 
@@ -590,7 +572,7 @@ ANTHROPIC_AUTH_TOKEN（不是 ANTHROPIC_API_KEY）
 ls -la .github/workflows/user_agent.yml
 
 # 确认 registry 配置
-cat agents/_registry/your_username.yml | grep workflow_file
+cat agents/YOUR_USERNAME/agent.yml | grep workflow_file
 ```
 
 ---

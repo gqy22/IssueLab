@@ -22,10 +22,10 @@
 │                                                          │
 │  GitHub Issues ←→ Workflows ←→ Agent Registry           │
 │      ↓                ↓              ↓                   │
-│   用户输入        orchestrator    agents/_registry/      │
+│   用户输入        orchestrator    agents/<user>/         │
 │   @mentions      dispatch_agents   [user configs]       │
 └──────────────┬──────────────────────────────────────────┘
-               │ 
+               │
                │ GitHub App Token + Dispatch
                │
        ┌───────┴────────┬───────────────┐
@@ -53,7 +53,7 @@
 | **Issue Templates** | `.github/ISSUE_TEMPLATE/` | 结构化输入 |
 | **Orchestrator** | `.github/workflows/orchestrator.yml` | 命令处理、流程控制 |
 | **Dispatcher** | `.github/workflows/dispatch_agents.yml` | 跨仓库触发 |
-| **Registry** | `agents/_registry/*.yml` | 用户 agent 注册信息 |
+| **Registry** | `agents/<user>/agent.yml` | 用户 agent 注册信息 |
 | **User Agent Workflow** | Fork: `.github/workflows/user_agent.yml` | 接收触发、执行 agent |
 | **Agent Modules** | `src/issuelab/agents/` | Agent 执行引擎模块化架构 |
 | **Dispatch CLI** | `src/issuelab/cli/dispatch.py` | 动态 Token 生成 + Dispatch |
@@ -69,7 +69,7 @@ Orchestrator 检测 @mention
     ↓
 调用 parse_mentions.py 解析 → ["alice"]
     ↓
-读取 agents/_registry/alice.yml
+读取 agents/alice/agent.yml
     ↓
 dispatch.py 动态生成 GitHub App Token
     ↓
@@ -126,10 +126,10 @@ on:
 
 ### 2.3 注册机制
 
-**注册文件格式**（`agents/_registry/username.yml`）：
+**智能体配置文件格式**（`agents/<username>/agent.yml`）：
 
 ```yaml
-username: alice
+owner: alice                      # 必需：你的 GitHub ID
 display_name: "Alice"
 contact: "alice@example.com"
 
@@ -158,7 +158,7 @@ rate_limit:
 **注册流程：**
 
 1. 用户 fork 项目
-2. 创建 `agents/_registry/username.yml`
+2. 创建 `agents/<username>/agent.yml`
 3. 提交 PR 到主仓库
 4. 主仓库维护者审核并合并
 5. 用户安装 GitHub App 到自己的 fork

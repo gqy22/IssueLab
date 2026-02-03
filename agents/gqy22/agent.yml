@@ -25,6 +25,10 @@ enabled: true
 repository: "gqy22/IssueLab"
 branch: "main"
 
+# Dispatch 配置（用于跨仓库触发）
+dispatch_mode: workflow_dispatch  # 可选值: repository_dispatch, workflow_dispatch
+workflow_file: user_agent.yml      # workflow_dispatch 模式时指定 workflow 文件
+
 # 速率限制
 rate_limit:
   max_calls_per_hour: 10

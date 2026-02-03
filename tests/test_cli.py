@@ -176,21 +176,23 @@ class TestDispatch:
         from issuelab.cli.dispatch import load_registry
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            registry_dir = Path(tmpdir)
+            agents_dir = Path(tmpdir)
 
-            # Create test registry file
-            config_file = registry_dir / "alice.yml"
+            # Create test agent directory with agent.yml
+            alice_dir = agents_dir / "alice"
+            alice_dir.mkdir()
+            config_file = alice_dir / "agent.yml"
             config_file.write_text("""
-username: alice
+owner: alice
 repository: alice/IssueLab
 triggers:
   - "@alice"
 enabled: true
 """)
 
-            registry = load_registry(registry_dir)
+            registry = load_registry(agents_dir)
             assert "alice" in registry
-            assert registry["alice"]["username"] == "alice"
+            assert registry["alice"]["owner"] == "alice"
             assert registry["alice"]["repository"] == "alice/IssueLab"
 
     def test_load_disabled_agent(self):
@@ -198,18 +200,21 @@ enabled: true
         from issuelab.cli.dispatch import load_registry
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            registry_dir = Path(tmpdir)
+            agents_dir = Path(tmpdir)
 
-            config_file = registry_dir / "bob.yml"
+            # Create test agent directory with agent.yml
+            bob_dir = agents_dir / "bob"
+            bob_dir.mkdir()
+            config_file = bob_dir / "agent.yml"
             config_file.write_text("""
-username: bob
+owner: bob
 repository: bob/IssueLab
 triggers:
   - "@bob"
 enabled: false
 """)
 
-            registry = load_registry(registry_dir)
+            registry = load_registry(agents_dir)
             assert "bob" not in registry
 
     def test_match_triggers(self):
@@ -217,14 +222,14 @@ enabled: false
         from issuelab.cli.dispatch import match_triggers
 
         registry = {
-            "alice": {"username": "alice", "repository": "alice/IssueLab", "triggers": ["@alice"]},
-            "bob": {"username": "bob", "repository": "bob/IssueLab", "triggers": ["@bob", "@bob-cv"]},
+            "alice": {"owner": "alice", "repository": "alice/IssueLab", "triggers": ["@alice"]},
+            "bob": {"owner": "bob", "repository": "bob/IssueLab", "triggers": ["@bob", "@bob-cv"]},
         }
 
         # Test direct match
         matched = match_triggers(["alice"], registry)
         assert len(matched) == 1
-        assert matched[0]["username"] == "alice"
+        assert matched[0]["owner"] == "alice"
 
         # Test multiple matches
         matched = match_triggers(["alice", "bob"], registry)
@@ -237,7 +242,7 @@ enabled: false
         # Test alias match
         matched = match_triggers(["bob-cv"], registry)
         assert len(matched) == 1
-        assert matched[0]["username"] == "bob"
+        assert matched[0]["owner"] == "bob"
 
 
 class TestDispatchCLI:
@@ -251,17 +256,17 @@ class TestDispatchCLI:
         monkeypatch.setenv("GITHUB_TOKEN", "fake_token")
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Create empty registry
-            registry_dir = Path(tmpdir)
-            registry_dir.mkdir(exist_ok=True)
+            # Create empty agents directory
+            agents_dir = Path(tmpdir)
+            agents_dir.mkdir(exist_ok=True)
 
             # Should handle JSON format
             result = main(
                 [
                     "--mentions",
                     '["alice", "bob"]',
-                    "--registry-dir",
-                    str(registry_dir),
+                    "--agents-dir",
+                    str(agents_dir),
                     "--source-repo",
                     "test/repo",
                     "--issue-number",
@@ -280,17 +285,17 @@ class TestDispatchCLI:
         monkeypatch.setenv("GITHUB_TOKEN", "fake_token")
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Create empty registry
-            registry_dir = Path(tmpdir)
-            registry_dir.mkdir(exist_ok=True)
+            # Create empty agents directory
+            agents_dir = Path(tmpdir)
+            agents_dir.mkdir(exist_ok=True)
 
             # Should handle CSV format
             result = main(
                 [
                     "--mentions",
                     "alice,bob",
-                    "--registry-dir",
-                    str(registry_dir),
+                    "--agents-dir",
+                    str(agents_dir),
                     "--source-repo",
                     "test/repo",
                     "--issue-number",

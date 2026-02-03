@@ -57,27 +57,32 @@ jobs:
           import yaml
           from pathlib import Path
 
-          registry_dir = Path("agents/_registry")
+          agents_dir = Path("agents")
           agents_list = []
 
-          if registry_dir.exists():
-              for yml_file in registry_dir.glob("*.yml"):
+          if agents_dir.exists():
+              for user_dir in agents_dir.iterdir():
+                  if not user_dir.is_dir():
+                      continue
+                  agent_yml = user_dir / "agent.yml"
+                  if not agent_yml.exists():
+                      continue
                   try:
-                      with open(yml_file) as f:
+                      with open(agent_yml) as f:
                           config = yaml.safe_load(f)
-                      
+
                       if config and config.get("enabled", True):
-                          username = config.get("username")
+                          username = config.get("owner") or config.get("username")
                           triggers = config.get("triggers", [])
                           description = config.get("description", "")
-                          
+
                           if username and triggers:
                               agents_list.append({
                                   "name": triggers[0] if triggers else f"@{username}",
-                                  "description": description or f"{username} 智能体"
+                                  "description": description or f"{username} agent"
                               })
                   except Exception as e:
-                      print(f"Warning: Failed to load {yml_file.name}: {e}")
+                      print(f"Warning: Failed to load {agent_yml}: {e}")
 
           # 输出为JSON（单行，供workflow使用）
           with open("/tmp/agents.json", "w") as f:
@@ -104,7 +109,7 @@ jobs:
 
           python -m issuelab.cli.dispatch \
             --mentions "$mentions" \
-            --registry-dir agents/_registry \
+            --agents-dir agents \
             --source-repo "${{ github.repository }}" \
             --issue-number ${{ github.event.issue.number }} \
             --issue-title "${{ github.event.issue.title }}" \

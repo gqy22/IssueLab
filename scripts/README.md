@@ -186,10 +186,10 @@ GitHub 的 `GITHUB_TOKEN` 有安全限制，无法触发其他仓库（包括 fo
 1. **repository_dispatch** (默认) - 适用于主仓库
 2. **workflow_dispatch** (推荐) - 适用于 fork 仓库
 
-在 `agents/_registry/{username}.yml` 中配置：
+在 `agents/<username>/agent.yml` 中配置：
 
 ```yaml
-username: your_username
+owner: your_username
 repository: your_username/IssueLab
 dispatch_mode: workflow_dispatch  # 对 fork 仓库使用此模式
 workflow_file: user_agent.yml

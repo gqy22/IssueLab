@@ -203,11 +203,11 @@ IssueLab 支持两种 Dispatch 模式：
 
 ### 4.2 注册用户 Agent
 
-在 `agents/_registry/` 创建用户配置文件：
+在 `agents/<username>/` 创建 agent.yml：
 
 ```yaml
-# agents/_registry/username.yml
-username: username
+# agents/username/agent.yml
+owner: username                    # 必需：你的 GitHub ID
 display_name: "Your Name"
 contact: "your@email.com"
 
@@ -520,7 +520,7 @@ uv pip install "claude-agent-sdk>=0.1.27"
 **配置迁移：**
 
 从旧版本迁移时，注意：
-- 检查 `agents/_registry/*.yml` 格式变化
+- 旧版 `agents/_registry/*.yml` 已合并到 `agents/<user>/agent.yml`
 - 更新 workflow 文件到最新版本
 - 检查 secrets 名称是否变更
 

@@ -31,6 +31,12 @@ labels_filter:                   # 可选：只响应包含这些标签的 Issue
 repository: "your-github-id/IssueLab"  # 必需：你的 fork 仓库
 branch: "main"                   # 可选：分支名，默认 main
 
+# Dispatch 配置（用于跨仓库触发）
+dispatch_mode: workflow_dispatch   # 可选：dispatch 方式
+                                     #   - repository_dispatch: 使用 repository_dispatch 事件
+                                     #   - workflow_dispatch: 使用 workflow_dispatch 事件（推荐 fork 仓库）
+workflow_file: user_agent.yml      # 可选：workflow_dispatch 模式时指定的 workflow 文件
+
 # 速率限制
 rate_limit:                      # 可选：速率限制
   max_calls_per_hour: 10         # 每小时最多调用次数

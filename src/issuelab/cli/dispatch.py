@@ -19,37 +19,42 @@ import requests
 import yaml
 
 
-def load_registry(registry_dir: Path) -> dict[str, dict[str, Any]]:
+def load_registry(agents_dir: Path) -> dict[str, dict[str, Any]]:
     """
-    加载所有注册文件
+    从 agents/<user>/agent.yml 加载所有注册信息
 
     Args:
-        registry_dir: 注册目录路径
+        agents_dir: agents 目录路径
 
     Returns:
         用户名 -> 注册信息的字典
     """
     registry = {}
 
-    if not registry_dir.exists():
-        print(f"Warning: Registry directory not found: {registry_dir}", file=sys.stderr)
+    if not agents_dir.exists():
+        print(f"Warning: Agents directory not found: {agents_dir}", file=sys.stderr)
         return registry
 
-    for yml_file in registry_dir.glob("*.yml"):
-        if yml_file.name == "README.md":
+    for user_dir in agents_dir.iterdir():
+        if not user_dir.is_dir():
+            continue
+
+        agent_yml = user_dir / "agent.yml"
+        if not agent_yml.exists():
             continue
 
         try:
-            with open(yml_file) as f:
+            with open(agent_yml) as f:
                 config = yaml.safe_load(f)
 
             if not config:
-                print(f"Warning: Empty config in {yml_file.name}", file=sys.stderr)
+                print(f"Warning: Empty config in {agent_yml}", file=sys.stderr)
                 continue
 
-            username = config.get("username")
+            # 使用 owner 或 username 作为标识
+            username = config.get("owner") or config.get("username")
             if not username:
-                print(f"Warning: {yml_file.name} missing username", file=sys.stderr)
+                print(f"Warning: {agent_yml} missing 'owner' or 'username'", file=sys.stderr)
                 continue
 
             # 检查是否启用
@@ -434,7 +439,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Dispatch events to user repositories")
     parser.add_argument("--mentions", required=True, help="Mentions list (JSON array or comma-separated)")
     parser.add_argument(
-        "--registry-dir", default="agents/_registry", help="Registry directory (default: agents/_registry)"
+        "--agents-dir", default="agents", help="Agents directory (default: agents)"
     )
     parser.add_argument("--source-repo", required=True, help="Source repository (owner/repo)")
     parser.add_argument("--issue-number", required=True, type=int, help="Issue number")
@@ -504,8 +509,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Found mentions: {', '.join(mentions)}")
 
     # 加载注册信息
-    registry_dir = Path(args.registry_dir)
-    registry = load_registry(registry_dir)
+    agents_dir = Path(args.agents_dir)
+    registry = load_registry(agents_dir)
     print(f"Loaded {len(registry)} registered agents")
 
     if not registry:
@@ -555,7 +560,7 @@ def main(argv: list[str] | None = None) -> int:
     for config in matched_configs:
         repository = config.get("repository")
         branch = config.get("branch", "main")
-        username = config.get("username")
+        username = config.get("owner") or config.get("username")
         dispatch_mode = config.get("dispatch_mode", "repository_dispatch")
         workflow_file = config.get("workflow_file", "user_agent.yml")
 
