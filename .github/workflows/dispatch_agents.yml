@@ -107,18 +107,27 @@ jobs:
             exit 0
           fi
 
+          # 将多行内容写入临时文件，避免命令行参数解析问题
+          ISSUE_BODY_FILE=$(mktemp)
+          COMMENT_BODY_FILE=$(mktemp)
+          echo -n "${{ github.event.issue.body }}" > "$ISSUE_BODY_FILE"
+          echo -n "${{ github.event.comment.body }}" > "$COMMENT_BODY_FILE"
+
           python -m issuelab.cli.dispatch \
             --mentions "$mentions" \
             --agents-dir agents \
             --source-repo "${{ github.repository }}" \
             --issue-number ${{ github.event.issue.number }} \
             --issue-title "${{ github.event.issue.title }}" \
-            --issue-body "${{ github.event.issue.body }}" \
+            --issue-body-file "$ISSUE_BODY_FILE" \
             ${{ github.event_name == 'issue_comment' && format('--comment-id {0}', github.event.comment.id) || '' }} \
-            ${{ github.event_name == 'issue_comment' && format('--comment-body "{0}"', github.event.comment.body) || '' }} \
+            --comment-body-file "$COMMENT_BODY_FILE" \
             --labels '${{ steps.labels.outputs.labels }}' \
             --available-agents '${{ steps.collect_agents.outputs.agents }}' \
             --use-github-app
+
+          # 清理临时文件
+          rm -f "$ISSUE_BODY_FILE" "$COMMENT_BODY_FILE"
         env:
           PYTHONPATH: ${{ github.workspace }}/src
           GITHUB_APP_ID: ${{ secrets.ISSUELAB_APP_ID }}

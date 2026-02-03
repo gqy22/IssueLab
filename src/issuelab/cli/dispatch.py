@@ -444,9 +444,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--source-repo", required=True, help="Source repository (owner/repo)")
     parser.add_argument("--issue-number", required=True, type=int, help="Issue number")
     parser.add_argument("--issue-title", help="Issue title")
-    parser.add_argument("--issue-body", help="Issue body")
+    parser.add_argument("--issue-body", help="Issue body (direct value)")
+    parser.add_argument("--issue-body-file", help="Issue body (read from file)")
     parser.add_argument("--comment-id", type=int, help="Comment ID (if triggered by comment)")
-    parser.add_argument("--comment-body", help="Comment body")
+    parser.add_argument("--comment-body", help="Comment body (direct value)")
+    parser.add_argument("--comment-body-file", help="Comment body (read from file)")
     parser.add_argument("--labels", help="Issue labels (JSON array)")
     parser.add_argument(
         "--available-agents",
@@ -464,6 +466,25 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--app-private-key", help="GitHub App Private Key (required if --use-github-app)")
 
     args = parser.parse_args(argv)
+
+    # 处理从文件读取的 body 内容
+    issue_body = args.issue_body
+    if args.issue_body_file:
+        try:
+            with open(args.issue_body_file, "r", encoding="utf-8") as f:
+                issue_body = f.read()
+        except Exception as e:
+            print(f"Error reading issue-body-file: {e}", file=sys.stderr)
+            return 1
+
+    comment_body = args.comment_body
+    if args.comment_body_file:
+        try:
+            with open(args.comment_body_file, "r", encoding="utf-8") as f:
+                comment_body = f.read()
+        except Exception as e:
+            print(f"Error reading comment-body-file: {e}", file=sys.stderr)
+            return 1
 
     # 检查认证方式
     use_github_app = args.use_github_app or os.environ.get("GITHUB_APP_AUTH") == "true"
@@ -531,12 +552,12 @@ def main(argv: list[str] | None = None) -> int:
         "source_repo": args.source_repo,
         "issue_number": args.issue_number,
         "issue_title": args.issue_title,
-        "issue_body": args.issue_body,
+        "issue_body": issue_body,
     }
 
     if args.comment_id:
         client_payload["comment_id"] = args.comment_id
-        client_payload["comment_body"] = args.comment_body
+        client_payload["comment_body"] = comment_body
 
     if args.labels:
         try:

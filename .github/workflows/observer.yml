@@ -69,9 +69,12 @@ jobs:
           echo "=== 分析完成 ==="
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
           ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
           ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
+          GITHUB_APP_ID: ${{ secrets.ISSUELAB_APP_ID }}
+          GITHUB_APP_PRIVATE_KEY: ${{ secrets.ISSUELAB_APP_PRIVATE_KEY }}
           LOG_FILE: ${{ github.workspace }}/logs/observer_${{ github.run_id }}.log
           LOG_LEVEL: DEBUG
 
