@@ -146,6 +146,10 @@ jobs:
         with:
           agent-name: moderator
           issue-number: ${{ github.event.issue.number }}
+          gh-token: ${{ secrets.PAT_TOKEN }}
+          anthropic-auth-token: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
+          anthropic-base-url: ${{ secrets.ANTHROPIC_BASE_URL || 'https://api.minimaxi.com/anthropic' }}
+          anthropic-model: ${{ secrets.ANTHROPIC_MODEL || 'MiniMax-M2.1' }}
       - uses: actions/upload-artifact@v4
         with:
           name: moderator-logs-${{ github.event.issue.number }}
@@ -169,6 +173,10 @@ jobs:
         with:
           agent-name: reviewer_a
           issue-number: ${{ github.event.issue.number }}
+          gh-token: ${{ secrets.PAT_TOKEN }}
+          anthropic-auth-token: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
+          anthropic-base-url: ${{ secrets.ANTHROPIC_BASE_URL || 'https://api.minimaxi.com/anthropic' }}
+          anthropic-model: ${{ secrets.ANTHROPIC_MODEL || 'MiniMax-M2.1' }}
       - uses: actions/upload-artifact@v4
         with:
           name: reviewer-a-logs-${{ github.event.issue.number }}
@@ -192,6 +200,10 @@ jobs:
         with:
           agent-name: reviewer_b
           issue-number: ${{ github.event.issue.number }}
+          gh-token: ${{ secrets.PAT_TOKEN }}
+          anthropic-auth-token: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
+          anthropic-base-url: ${{ secrets.ANTHROPIC_BASE_URL || 'https://api.minimaxi.com/anthropic' }}
+          anthropic-model: ${{ secrets.ANTHROPIC_MODEL || 'MiniMax-M2.1' }}
       - uses: actions/upload-artifact@v4
         with:
           name: reviewer-b-logs-${{ github.event.issue.number }}
@@ -215,6 +227,10 @@ jobs:
         with:
           agent-name: summarizer
           issue-number: ${{ github.event.issue.number }}
+          gh-token: ${{ secrets.PAT_TOKEN }}
+          anthropic-auth-token: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
+          anthropic-base-url: ${{ secrets.ANTHROPIC_BASE_URL || 'https://api.minimaxi.com/anthropic' }}
+          anthropic-model: ${{ secrets.ANTHROPIC_MODEL || 'MiniMax-M2.1' }}
 
       - name: Check for auto-close
         if: always()
@@ -253,6 +269,10 @@ jobs:
         with:
           agent-name: echo
           issue-number: ${{ github.event.issue.number }}
+          gh-token: ${{ secrets.PAT_TOKEN }}
+          anthropic-auth-token: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
+          anthropic-base-url: ${{ secrets.ANTHROPIC_BASE_URL || 'https://api.minimaxi.com/anthropic' }}
+          anthropic-model: ${{ secrets.ANTHROPIC_MODEL || 'MiniMax-M2.1' }}
       - uses: actions/upload-artifact@v4
         with:
           name: echo-logs-${{ github.event.issue.number }}
