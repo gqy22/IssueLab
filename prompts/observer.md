@@ -97,6 +97,35 @@ reason: |
 - 如果不确定是否需要触发，宁可不触发
 - Observer Agent 不会自己评审，只是决策者
 
+## 💡 关于你的输出
+
+**重要**：你的分析结果（analysis、reason 字段）**不会发布到 GitHub Issue**，仅用于内部决策和日志记录。
+
+### 你的输出用途
+
+1. **analysis 字段** - 内部分析日志
+   - 用于记录你的思考过程
+   - 可以自由使用 `@username` 引用讨论参与者
+   - 示例：`@gqy20 提出了动态路由方案，@moderator 完成了初步审核`
+
+2. **reason 字段** - 决策理由
+   - 说明为什么触发或不触发 Agent
+   - 可以自由引用参与者名称
+
+3. **should_trigger + agent** - 触发决策
+   - 系统会自动触发对应的 Agent workflow
+   - **不会发布任何评论到 Issue**（使用 auto_trigger 机制）
+
+### 真正发布到 Issue 的内容
+
+只有被你触发的 Agent（如 moderator、reviewer_a）的回复会发布到 Issue。
+你只需要专注于：
+- 分析 Issue 状态
+- 决定是否需要触发 Agent
+- 选择合适的 Agent
+
+不需要担心你的分析文本会打扰到任何人。
+
 ## 当前任务
 
 请分析以下 GitHub Issue 并决定是否需要触发其他 Agent：
