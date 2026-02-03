@@ -363,6 +363,7 @@ def main():
 
     elif args.command == "personal-reply":
         # 个人Agent回复主仓库issue
+        import json
         import subprocess
         import yaml
 
