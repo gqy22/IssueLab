@@ -127,6 +127,24 @@ def main():
             print(f"\n=== {agent_name} result (成本: ${cost_usd:.4f}, 轮数: {num_turns}, 工具: {tool_calls}) ===")
             print(response)
 
+            # 🔥 处理response中的@mentions（自动触发被@的agents）
+            from issuelab.response_processor import process_agent_response
+
+            processed = process_agent_response(
+                agent_name=agent_name,
+                response=result,
+                issue_number=args.issue,
+                issue_title=issue_info.get("title", ""),
+                issue_body=issue_info.get("body", ""),
+                auto_dispatch=True,  # 自动触发被@的agents
+            )
+
+            if processed["mentions"]:
+                print(f"📬 发现 @mentions: {', '.join(processed['mentions'])}")
+                for mentioned_user, success in processed["dispatch_results"].items():
+                    status = "✅" if success else "❌"
+                    print(f"  {status} 触发 {mentioned_user}")
+
             # 如果需要，自动发布到 Issue
             if getattr(args, "post", False):
                 if post_comment(args.issue, response):
