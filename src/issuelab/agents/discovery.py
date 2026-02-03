@@ -20,7 +20,7 @@ def parse_agent_metadata(content: str) -> dict | None:
     格式：
     ---
     agent: moderator
-    description: 分诊与控场代理
+    description: 审核与控场代理
     trigger_conditions:
       - 新论文 Issue
       - 需要分配评审流程

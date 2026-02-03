@@ -181,7 +181,7 @@ def _get_default_trigger_comment(agent: str) -> str:
         默认的触发评论
     """
     agent_map = {
-        "moderator": "@moderator 请分诊",
+        "moderator": "@moderator 请审核",
         "reviewer_a": "@reviewer_a 评审",
         "reviewer_b": "@reviewer_b 找问题",
         "summarizer": "@summarizer 汇总",

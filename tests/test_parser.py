@@ -5,13 +5,13 @@ from issuelab.parser import AGENT_NAMES, has_mentions, parse_mentions
 
 def test_parse_single_mention():
     """测试解析单个 @mention"""
-    result = parse_mentions("@moderator 请分诊")
+    result = parse_mentions("@moderator 请审核")
     assert result == ["moderator"]
 
 
 def test_parse_multiple_mentions():
     """测试解析多个 @mention"""
-    result = parse_mentions("@moderator 分诊，@reviewer_a 评审")
+    result = parse_mentions("@moderator 审核，@reviewer_a 评审")
     assert result == ["moderator", "reviewer_a"]
 
 
@@ -27,7 +27,7 @@ def test_parse_name_mappings():
 
 def test_parse_uppercase_mention():
     """测试大写 @Mention 也应解析"""
-    result = parse_mentions("@MODERATOR 分诊")
+    result = parse_mentions("@MODERATOR 审核")
     assert result == ["moderator"]
 
 

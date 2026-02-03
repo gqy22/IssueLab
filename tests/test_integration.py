@@ -37,7 +37,7 @@ def test_end_to_end_agent_loading():
     # 2. 加载 prompt
     prompt = load_prompt(normalized)
     assert len(prompt) > 0
-    assert "Moderator" in prompt or "分诊" in prompt
+    assert "Moderator" in prompt or "审核" in prompt
 
 
 def test_all_prompts_loadable():

@@ -40,7 +40,7 @@ def test_create_agent_options_has_setting_sources():
 def test_load_prompt_moderator():
     """load_prompt 应该加载 moderator 提示词"""
     result = load_prompt("moderator")
-    assert "Moderator" in result or "分诊" in result
+    assert "Moderator" in result or "审核" in result
     assert len(result) > 0
 
 
@@ -185,16 +185,16 @@ should_trigger: true
 agent: moderator
 
 comment: |
-  @moderator 请分诊这篇论文，它包含 arXiv 链接和模板
+  @moderator 请审核这篇论文，它包含 arXiv 链接和模板
 
 reason: |
-  Issue #123 包含论文模板和 arXiv 链接，需要分诊决定后续评审流程
+  Issue #123 包含论文模板和 arXiv 链接，需要审核决定后续评审流程
 ```"""
         result = parse_observer_response(response, 123)
         assert result["should_trigger"] is True
         assert result["agent"] == "moderator"
         assert "@moderator" in result["comment"]
-        assert "分诊" in result["reason"]
+        assert "审核" in result["reason"]
         assert "arXiv" in result["analysis"]
 
     def test_parse_yaml_block_scalar_skip(self):
