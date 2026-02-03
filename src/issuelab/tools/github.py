@@ -93,22 +93,50 @@ def truncate_text(text: str, max_length: int = MAX_COMMENT_LENGTH) -> str:
 
 
 def post_comment(
-    issue_number: int, body: str, mentions: list[str] | None = None, auto_truncate: bool = True
+    issue_number: int, body: str, mentions: list[str] | None = None, auto_truncate: bool = True, auto_clean: bool = True
 ) -> bool:
-    """在 Issue 下发布评论
+    """在 Issue 下发布评论（集中式 @ 管理）
 
-    新增功能：支持拼接 @ 区域
+    新增功能：
+    1. 支持拼接 @ 区域
+    2. 支持自动清理和过滤 @mentions（默认开启）
 
     Args:
         issue_number: Issue 编号
-        body: 评论内容（主体内容，已清理 @）
+        body: 评论内容
         mentions: 需要 @ 的用户列表（会拼接到评论末尾）
+                 如果为 None 且 auto_clean=True，会自动提取并过滤
         auto_truncate: 是否自动截断过长内容（默认 True）
+        auto_clean: 是否自动清理和过滤 @mentions（默认 True）
+                   设为 False 可完全禁用 @ 管理（绕过策略）
 
     Returns:
         是否成功发布
     """
     env = prepare_github_env()
+
+    # 自动清理和过滤 @mentions（集中式管理的核心）
+    if mentions is None and auto_clean:
+        from issuelab.mention_policy import filter_mentions
+        from issuelab.response_processor import clean_mentions_in_text, extract_mentions
+
+        # 1. 提取所有 @mentions
+        all_mentions = extract_mentions(body)
+        
+        # 2. 应用策略过滤
+        if all_mentions:
+            allowed_mentions, filtered_mentions = filter_mentions(all_mentions)
+            
+            if filtered_mentions:
+                logger.info(f"[FILTER] 过滤了 {len(filtered_mentions)} 个 @mentions: {filtered_mentions}")
+            
+            # 3. 清理主体内容（@ → "用户 xxx"）
+            body = clean_mentions_in_text(body)
+            
+            # 4. 使用过滤后的 mentions
+            mentions = allowed_mentions
+        else:
+            mentions = []
 
     # 拼接 @ 区域
     if mentions:

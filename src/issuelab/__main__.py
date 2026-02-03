@@ -175,12 +175,9 @@ def main():
                     status = "[OK]" if success else "[ERROR]"
                     print(f"  {status} 触发 {mentioned_user}")
 
-            # 如果需要，自动发布到 Issue
+            # 如果需要，自动发布到 Issue（auto_clean 会自动处理 @mentions）
             if getattr(args, "post", False):
-                # 使用清理后的回复 + 拼接 @ 区域
-                if post_comment(
-                    args.issue, processed["clean_response"], mentions=processed["allowed_mentions"]
-                ):
+                if post_comment(args.issue, response):
                     print(f"[OK] {agent_name} response posted to issue #{args.issue}")
                 else:
                     print(f"[ERROR] Failed to post {agent_name} response")
@@ -199,7 +196,7 @@ def main():
             print(f"\n=== {agent_name} result (成本: ${cost_usd:.4f}, 轮数: {num_turns}, 工具: {tool_calls}) ===")
             print(response)
 
-            # 如果需要，自动发布到 Issue
+            # 如果需要，自动发布到 Issue（auto_clean 会自动处理 @mentions）
             if getattr(args, "post", False):
                 if post_comment(args.issue, response):
                     print(f"[OK] {agent_name} response posted to issue #{args.issue}")
@@ -231,7 +228,7 @@ def main():
             print(f"Trigger Comment: {result.get('comment', 'N/A')}")
             print(f"Reason: {result.get('reason', 'N/A')}")
 
-            # 如果需要，自动发布触发评论
+            # 如果需要，自动发布触发评论（auto_clean 会自动处理 @mentions）
             if getattr(args, "post", False):
                 if result.get("comment") and post_comment(args.issue, result["comment"]):
                     print(f"\n[OK] Trigger comment posted to issue #{args.issue}")
@@ -329,6 +326,7 @@ def main():
                             print("  [ERROR] 自动触发失败")
 
                 # 如果需要，自动发布触发评论（已弃用，使用 auto_trigger 代替）
+                # auto_clean 会自动处理 @mentions
                 elif getattr(args, "post", False):
                     comment = result.get("comment")
                     if comment and post_comment(issue_num, comment):
@@ -470,8 +468,28 @@ def main():
                         "\n详见: agents/_template/agent.yml 中的 GitHub Token 配置说明\n"
                     )
 
+                # 🔥 应用集中式 @ 管理
+                from issuelab.mention_policy import filter_mentions
+                from issuelab.response_processor import build_mention_section, clean_mentions_in_text, extract_mentions
+
+                # 提取并过滤 @mentions
+                all_mentions = extract_mentions(response)
+                if all_mentions:
+                    allowed_mentions, filtered_mentions = filter_mentions(all_mentions)
+                    if filtered_mentions:
+                        print(f"[FILTER] 过滤了 {len(filtered_mentions)} 个 @mentions: {filtered_mentions}")
+                    # 清理主体 + 拼接 @ 区域
+                    clean_response = clean_mentions_in_text(response)
+                    if allowed_mentions:
+                        mention_section = build_mention_section(allowed_mentions)
+                        final_response = f"{clean_response}\n\n{mention_section}"
+                    else:
+                        final_response = clean_response
+                else:
+                    final_response = response
+
                 subprocess.run(
-                    ["gh", "issue", "comment", str(args.issue), "--repo", args.repo, "--body", response],
+                    ["gh", "issue", "comment", str(args.issue), "--repo", args.repo, "--body", final_response],
                     check=True,
                     capture_output=True,
                     text=True,
