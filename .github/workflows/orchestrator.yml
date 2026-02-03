@@ -26,21 +26,7 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: "latest"
-          enable-cache: true
-          cache-dependency-glob: "**/pyproject.toml"
-
-      - name: Set up Python
-        run: uv python install 3.12
-
-      - name: Install dependencies
-        run: uv sync
+      - uses: ./.github/actions/setup-python-env
 
       - name: Update issue state
         run: |
@@ -78,14 +64,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
 
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@v4
+      - uses: ./.github/actions/upload-logs
         with:
           name: auto-review-logs-${{ github.event.issue.number }}
-          path: logs/
-          retention-days: 7
-          if-no-files-found: ignore
 
   # ========== @mention 触发：检测并分发 ==========
   detect-mentions:
@@ -156,20 +137,7 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: "latest"
-          enable-cache: true
-          cache-dependency-glob: "**/pyproject.toml"
-
-      - name: Set up Python
-        run: uv python install 3.12
-
-      - name: Install dependencies
-        run: uv sync
+      - uses: ./.github/actions/setup-python-env
 
       - name: Run moderator
         run: |
@@ -189,14 +157,9 @@ jobs:
           ACTIONS_STEP_DEBUG: "true"
           ACTIONS_RUNNER_DEBUG: "true"
 
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@v4
+      - uses: ./.github/actions/upload-logs
         with:
           name: moderator-logs-${{ github.event.issue.number }}
-          path: logs/
-          retention-days: 7
-          if-no-files-found: ignore
 
   run-reviewer_a:
     needs: detect-mentions
@@ -205,20 +168,7 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: "latest"
-          enable-cache: true
-          cache-dependency-glob: "**/pyproject.toml"
-
-      - name: Set up Python
-        run: uv python install 3.12
-
-      - name: Install dependencies
-        run: uv sync
+      - uses: ./.github/actions/setup-python-env
 
       - name: Run reviewer_a
         run: |
@@ -238,14 +188,9 @@ jobs:
           ACTIONS_STEP_DEBUG: "true"
           ACTIONS_RUNNER_DEBUG: "true"
 
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@v4
+      - uses: ./.github/actions/upload-logs
         with:
           name: reviewer-a-logs-${{ github.event.issue.number }}
-          path: logs/
-          retention-days: 7
-          if-no-files-found: ignore
 
   run-reviewer_b:
     needs: detect-mentions
@@ -254,20 +199,7 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: "latest"
-          enable-cache: true
-          cache-dependency-glob: "**/pyproject.toml"
-
-      - name: Set up Python
-        run: uv python install 3.12
-
-      - name: Install dependencies
-        run: uv sync
+      - uses: ./.github/actions/setup-python-env
 
       - name: Run reviewer_b
         run: |
@@ -287,14 +219,9 @@ jobs:
           ACTIONS_STEP_DEBUG: "true"
           ACTIONS_RUNNER_DEBUG: "true"
 
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@v4
+      - uses: ./.github/actions/upload-logs
         with:
           name: reviewer-b-logs-${{ github.event.issue.number }}
-          path: logs/
-          retention-days: 7
-          if-no-files-found: ignore
 
   run-summarizer:
     needs: detect-mentions
@@ -303,20 +230,7 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: "latest"
-          enable-cache: true
-          cache-dependency-glob: "**/pyproject.toml"
-
-      - name: Set up Python
-        run: uv python install 3.12
-
-      - name: Install dependencies
-        run: uv sync
+      - uses: ./.github/actions/setup-python-env
 
       - name: Run summarizer
         run: |
@@ -339,7 +253,6 @@ jobs:
       - name: Check for auto-close
         if: always()
         run: |
-          # 检查评论中是否包含 [CLOSE] 标记
           LAST_COMMENT=$(gh issue comments ${{ github.event.issue.number }} --repo ${{ github.repository }} --limit 1 --json body -q '.[0].body' 2>/dev/null || echo "")
           if echo "$LAST_COMMENT" | grep -q '\[CLOSE\]'; then
             echo "[INFO] 检测到 [CLOSE] 标记，正在关闭 Issue..."
@@ -351,14 +264,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
 
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@v4
+      - uses: ./.github/actions/upload-logs
         with:
           name: summarizer-logs-${{ github.event.issue.number }}
-          path: logs/
-          retention-days: 7
-          if-no-files-found: ignore
 
   run-echo:
     needs: detect-mentions
@@ -367,20 +275,7 @@ jobs:
     timeout-minutes: 5
 
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: "latest"
-          enable-cache: true
-          cache-dependency-glob: "**/pyproject.toml"
-
-      - name: Set up Python
-        run: uv python install 3.12
-
-      - name: Install dependencies
-        run: uv sync
+      - uses: ./.github/actions/setup-python-env
 
       - name: Run echo
         run: |
@@ -400,14 +295,9 @@ jobs:
           ACTIONS_STEP_DEBUG: "true"
           ACTIONS_RUNNER_DEBUG: "true"
 
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@v4
+      - uses: ./.github/actions/upload-logs
         with:
           name: echo-logs-${{ github.event.issue.number }}
-          path: logs/
-          retention-days: 7
-          if-no-files-found: ignore
 
   # ========== /command 触发（/review, /quiet, /close, /confirm-close） ==========
   process-command:
@@ -421,21 +311,7 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: "latest"
-          enable-cache: true
-          cache-dependency-glob: "**/pyproject.toml"
-
-      - name: Set up Python
-        run: uv python install 3.12
-
-      - name: Install dependencies
-        run: uv sync
+      - uses: ./.github/actions/setup-python-env
 
       - name: Extract command
         id: extract
@@ -466,13 +342,9 @@ jobs:
         if: steps.extract.outputs.command == '/close'
         run: |
           echo "[INFO] 收到关闭 Issue 请求，需要确认..."
-
-          # 添加待关闭标签
           gh issue edit ${{ github.event.issue.number }} \
             --add-label "bot:pending-close" \
             --repo ${{ github.repository }}
-
-          # 评论请求确认（使用 heredoc 避免 YAML 解析问题）
           gh issue comment ${{ github.event.issue.number }} \
             --repo ${{ github.repository }} \
             --body - <<-EOF
@@ -489,18 +361,12 @@ jobs:
         if: steps.extract.outputs.command == '/confirm-close'
         run: |
           echo "[OK] 确认关闭 Issue..."
-
-          # 移除待关闭标签
           gh issue edit ${{ github.event.issue.number }} \
             --remove-label "bot:pending-close" \
             --repo ${{ github.repository }}
-
-          # 关闭 Issue
           gh issue close ${{ github.event.issue.number }} \
             --repo ${{ github.repository }} \
             --reason "completed"
-
-          # 评论确认
           gh issue comment ${{ github.event.issue.number }} \
             --repo ${{ github.repository }} \
             --body "[OK] Issue 已由 @${{ github.event.comment.user.login }} 手动关闭"
@@ -514,11 +380,9 @@ jobs:
           gh issue edit ${{ github.event.issue.number }} \
             --add-label "state:review" \
             --repo ${{ github.repository }}
-
           uv run python -m issuelab review \
             --issue ${{ github.event.issue.number }} \
             --post
-
           gh issue edit ${{ github.event.issue.number }} \
             --add-label "bot:needs-summary" \
             --repo ${{ github.repository }}
@@ -534,14 +398,10 @@ jobs:
           ACTIONS_STEP_DEBUG: "true"
           ACTIONS_RUNNER_DEBUG: "true"
 
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@v4
+      - uses: ./.github/actions/upload-logs
         with:
           name: command-logs-${{ github.event.issue.number }}
-          path: logs/
-          retention-days: 7
-          if-no-files-found: ignore
+
   # ========== Observer 触发：bot:trigger-* 标签 ==========
   observer-triggered-agent:
     if: github.event_name == 'issues' &&
@@ -551,21 +411,7 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: "latest"
-          enable-cache: true
-          cache-dependency-glob: "**/pyproject.toml"
-
-      - name: Set up Python
-        run: uv python install 3.12
-
-      - name: Install dependencies
-        run: uv sync
+      - uses: ./.github/actions/setup-python-env
 
       - name: Extract agent name from label
         id: extract_agent
@@ -602,11 +448,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
 
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@v4
+      - uses: ./.github/actions/upload-logs
         with:
           name: triggered-agent-logs-${{ steps.extract_agent.outputs.agent_name }}-${{ github.event.issue.number }}
-          path: logs/
-          retention-days: 7
-          if-no-files-found: ignore

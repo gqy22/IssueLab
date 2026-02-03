@@ -18,22 +18,14 @@ permissions:
 
 jobs:
   observer-scan:
-    # 🔒 仅在主仓库运行，避免在fork仓库中不必要的定时执行
+    # 仅在主仓库运行，避免在fork仓库中不必要的定时执行
     if: github.repository == 'gqy20/IssueLab'
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-
-      - name: Set up Python
-        run: uv python install 3.13
-
-      - name: Install dependencies
-        run: uv sync
+      - uses: ./.github/actions/setup-python-env
+        with:
+          python-version: '3.13'
 
       - name: Get open issues
         id: get_issues
@@ -61,7 +53,7 @@ jobs:
         run: |
           echo "=== 并行分析 ${{ steps.get_issues.outputs.issue_count }} 个 Issues ==="
 
-          # 🔥 使用新的 auto-trigger 参数替代 --post（避免bot评论触发问题）
+          # 使用新的 auto-trigger 参数替代 --post（避免bot评论触发问题）
           uv run python -m issuelab observe-batch \
             --issues "${{ steps.get_issues.outputs.issue_numbers }}" \
             --auto-trigger
@@ -78,12 +70,6 @@ jobs:
           LOG_FILE: ${{ github.workspace }}/logs/observer_${{ github.run_id }}.log
           LOG_LEVEL: DEBUG
 
-      # 上传日志文件
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@v4
+      - uses: ./.github/actions/upload-logs
         with:
           name: observer-logs-${{ github.run_id }}
-          path: logs/
-          retention-days: 7
-          if-no-files-found: ignore

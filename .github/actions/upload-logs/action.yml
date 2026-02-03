@@ -1,0 +1,30 @@
+name: Upload Logs
+
+description: |
+  Upload log files to GitHub Artifacts.
+  Only runs if there are log files (uses if-no-files-found: ignore).
+
+inputs:
+  name:
+    description: Artifact name (will be prefixed with context)
+    required: true
+  retention-days:
+    description: Number of days to retain the artifact
+    default: '7'
+    required: false
+  path:
+    description: Path to logs directory
+    default: 'logs/'
+    required: false
+
+runs:
+  using: composite
+  steps:
+    - name: Upload logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.name }}
+        path: ${{ inputs.path }}
+        retention-days: ${{ inputs.retention-days }}
+        if-no-files-found: ignore
