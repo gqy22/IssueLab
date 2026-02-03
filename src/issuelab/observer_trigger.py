@@ -2,8 +2,10 @@
 Observer 自动触发功能
 
 实现Observer自动触发agent的核心逻辑：
-- 内置agent通过GitHub label触发
-- 用户agent通过dispatch系统触发
+- 内置agent通过workflow dispatch触发（使用PAT_TOKEN）
+- 用户agent通过repository dispatch触发（使用PAT_TOKEN）
+
+统一使用dispatch机制，无需预创建labels，简化架构。
 """
 
 import logging
@@ -42,7 +44,7 @@ def is_builtin_agent(agent_name: str) -> bool:
 
 def trigger_builtin_agent(agent_name: str, issue_number: int) -> bool:
     """
-    触发内置agent（通过添加label）
+    触发内置agent（通过workflow dispatch）
 
     Args:
         agent_name: Agent名称
@@ -52,19 +54,21 @@ def trigger_builtin_agent(agent_name: str, issue_number: int) -> bool:
         True: 触发成功
         False: 触发失败
     """
-    label = f"bot:trigger-{agent_name.lower()}"
-
     try:
-        subprocess.run(
-            ["gh", "issue", "edit", str(issue_number), "--add-label", label],
+        result = subprocess.run(
+            [
+                "gh", "workflow", "run", "agent.yml",
+                "-f", f"agent={agent_name.lower()}",
+                "-f", f"issue_number={issue_number}"
+            ],
             check=True,
             capture_output=True,
             text=True,
         )
-        logger.info(f"[OK] 已为 #{issue_number} 添加label: {label}")
+        logger.info(f"[OK] 已触发 workflow agent.yml: agent={agent_name}, issue=#{issue_number}")
         return True
     except subprocess.CalledProcessError as e:
-        logger.error(f"[ERROR] 添加label失败: {e.stderr}")
+        logger.error(f"[ERROR] 触发workflow失败: {e.stderr}")
         return False
     except Exception as e:
         logger.error(f"[ERROR] 触发内置agent失败: {e}")

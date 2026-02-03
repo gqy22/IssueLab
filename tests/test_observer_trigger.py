@@ -61,7 +61,7 @@ class TestBuiltinAgentTrigger:
 
     @patch("subprocess.run")
     def test_trigger_builtin_agent_adds_label(self, mock_run):
-        """触发内置agent应该添加label"""
+        """触发内置agent应该通过workflow dispatch触发"""
         from issuelab.observer_trigger import trigger_builtin_agent
 
         mock_run.return_value = Mock(returncode=0)
@@ -71,11 +71,12 @@ class TestBuiltinAgentTrigger:
         mock_run.assert_called_once()
         call_args = mock_run.call_args[0][0]
         assert "gh" in call_args
-        assert "issue" in call_args
-        assert "edit" in call_args
-        assert "42" in call_args
-        assert "--add-label" in call_args
-        assert "bot:trigger-moderator" in call_args
+        assert "workflow" in call_args
+        assert "run" in call_args
+        assert "agent.yml" in call_args
+        assert "-f" in call_args
+        assert "agent=moderator" in call_args
+        assert "issue_number=42" in call_args
 
     @patch("subprocess.run")
     def test_trigger_builtin_agent_returns_true_on_success(self, mock_run):
