@@ -82,22 +82,16 @@ def main():
     subparsers.add_parser("list-agents", help="列出所有可用的 Agent")
 
     # 个人Agent扫描命令（用于fork仓库）
-    personal_scan_parser = subparsers.add_parser(
-        "personal-scan", help="个人agent扫描主仓库issues（用于fork仓库）"
-    )
+    personal_scan_parser = subparsers.add_parser("personal-scan", help="个人agent扫描主仓库issues（用于fork仓库）")
     personal_scan_parser.add_argument("--agent", type=str, required=True, help="个人agent名称")
     personal_scan_parser.add_argument("--issues", type=str, required=True, help="候选issue编号（逗号分隔）")
-    personal_scan_parser.add_argument(
-        "--max-replies", type=int, default=3, help="最多回复的issue数量（默认3）"
-    )
+    personal_scan_parser.add_argument("--max-replies", type=int, default=3, help="最多回复的issue数量（默认3）")
     personal_scan_parser.add_argument(
         "--repo", type=str, default="gqy20/IssueLab", help="主仓库名称（默认gqy20/IssueLab）"
     )
 
     # 个人Agent回复命令（用于fork仓库）
-    personal_reply_parser = subparsers.add_parser(
-        "personal-reply", help="个人agent回复主仓库issue（用于fork仓库）"
-    )
+    personal_reply_parser = subparsers.add_parser("personal-reply", help="个人agent回复主仓库issue（用于fork仓库）")
     personal_reply_parser.add_argument("--agent", type=str, required=True, help="个人agent名称")
     personal_reply_parser.add_argument("--issue", type=int, required=True, help="Issue编号")
     personal_reply_parser.add_argument(
@@ -191,14 +185,14 @@ def main():
 
             # 如果是 summarator，检查是否需要自动关闭
             if agent_name == "summarizer":
-                from issuelab.response_processor import should_auto_close, close_issue
+                from issuelab.response_processor import close_issue, should_auto_close
 
                 if should_auto_close(response, agent_name):
                     print(f"\n[INFO] 检测到 [CLOSE] 标记，正在自动关闭 Issue #{args.issue}...")
                     if close_issue(args.issue):
                         print(f"[OK] Issue #{args.issue} 已自动关闭")
                     else:
-                        print(f"[ERROR] 自动关闭失败")
+                        print("[ERROR] 自动关闭失败")
 
     elif args.command == "observe":
         # 运行 Observer Agent 分析 Issue
@@ -478,7 +472,6 @@ def main():
                         print("[INFO] 结果已保存到 GITHUB_OUTPUT，workflow可以处理")
                     except Exception as e:
                         print(f"[WARNING] 保存到 GITHUB_OUTPUT 失败: {e}")
-
 
     elif args.command == "list-agents":
         # 列出所有可用的 Agent

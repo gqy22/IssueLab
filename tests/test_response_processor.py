@@ -90,9 +90,7 @@ class TestTriggerMentionedAgents:
         results = trigger_mentioned_agents(response, 1, "Title", "Body")
 
         assert results == {"alice": True}
-        mock_trigger.assert_called_once_with(
-            agent_name="alice", issue_number=1, issue_title="Title", issue_body="Body"
-        )
+        mock_trigger.assert_called_once_with(agent_name="alice", issue_number=1, issue_title="Title", issue_body="Body")
 
     @patch("issuelab.observer_trigger.auto_trigger_agent")
     def test_trigger_multiple_mentioned_agents(self, mock_trigger):
@@ -200,9 +198,7 @@ class TestProcessAgentResponse:
         """禁用自动dispatch"""
         from issuelab.response_processor import process_agent_response
 
-        result = process_agent_response(
-            agent_name="test", response="Hi @alice", issue_number=1, auto_dispatch=False
-        )
+        result = process_agent_response(agent_name="test", response="Hi @alice", issue_number=1, auto_dispatch=False)
 
         assert result["mentions"] == ["alice"]
         assert result["dispatch_results"] == {}

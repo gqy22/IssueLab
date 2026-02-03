@@ -4,7 +4,6 @@
 """
 
 import logging
-import os
 from pathlib import Path
 from typing import Any
 
@@ -55,7 +54,7 @@ def load_mention_policy() -> dict[str, Any]:
     try:
         import yaml
 
-        with open(config_file, "r", encoding="utf-8") as f:
+        with open(config_file, encoding="utf-8") as f:
             config = yaml.safe_load(f)
 
         if not config or "mention_policy" not in config:

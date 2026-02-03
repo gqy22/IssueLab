@@ -78,7 +78,7 @@ def fetch_papers(categories: list[str], last_scan: str, max_papers: int = 10) ->
             "sortOrder": "descending",
             "max_results": max_papers * 3,
         }
-        url = f"{base_url}?{ '&'.join(f'{k}={v}' for k,v in params.items()) }"
+        url = f"{base_url}?{'&'.join(f'{k}={v}' for k, v in params.items())}"
 
         try:
             response = feedparser.parse(url)
@@ -94,25 +94,25 @@ def fetch_papers(categories: list[str], last_scan: str, max_papers: int = 10) ->
                 if published_timestamp <= last_scan_timestamp:
                     continue
 
-                authors = ", ".join(
-                    a.get("name", "") for a in entry.get("authors", [])[:5]
-                )
+                authors = ", ".join(a.get("name", "") for a in entry.get("authors", [])[:5])
                 if len(entry.get("authors", [])) > 5:
                     authors += f" 等 {len(entry.get('authors', []))} 位作者"
 
                 arxiv_id = entry.get("id", "").split("/abs/")[-1]
 
-                all_papers.append({
-                    "id": arxiv_id,
-                    "title": clean_text(entry.get("title", "")),
-                    "summary": truncate_text(clean_text(entry.get("summary", ""))),
-                    "url": f"https://arxiv.org/abs/{arxiv_id}",
-                    "pdf_url": f"https://arxiv.org/pdf/{arxiv_id}.pdf",
-                    "authors": authors,
-                    "published": parse_arxiv_date(entry.get("published", "")),
-                    "published_raw": entry.get("published", ""),
-                    "category": category,
-                })
+                all_papers.append(
+                    {
+                        "id": arxiv_id,
+                        "title": clean_text(entry.get("title", "")),
+                        "summary": truncate_text(clean_text(entry.get("summary", ""))),
+                        "url": f"https://arxiv.org/abs/{arxiv_id}",
+                        "pdf_url": f"https://arxiv.org/pdf/{arxiv_id}.pdf",
+                        "authors": authors,
+                        "published": parse_arxiv_date(entry.get("published", "")),
+                        "published_raw": entry.get("published", ""),
+                        "category": category,
+                    }
+                )
 
         except Exception as e:
             print(f"   [WARNING] 获取失败: {e}")
@@ -165,7 +165,7 @@ def filter_existing_papers(papers: list[dict], repo_name: str, token: str) -> li
     repo = g.get_repo(repo_name)
 
     # 获取已存在的 Issue 标题
-    existing_titles = {issue.title for issue in repo.get_issues(state='all')}
+    existing_titles = {issue.title for issue in repo.get_issues(state="all")}
 
     # 过滤
     filtered = []
@@ -190,9 +190,9 @@ def analyze_with_observer(papers: list[dict], token: str) -> list[dict]:
     sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
     from issuelab.agents.observer import run_observer_for_papers
 
-    logger.info(f"\n{'='*60}")
+    logger.info(f"\n{'=' * 60}")
     logger.info(f"[Observer Agent] 开始智能分析 {len(papers)} 篇论文")
-    logger.info(f"{'='*60}")
+    logger.info(f"{'=' * 60}")
 
     # 如果论文不足 2 篇，无法推荐
     if len(papers) < 2:
@@ -215,31 +215,33 @@ def analyze_with_observer(papers: list[dict], token: str) -> list[dict]:
         selected_topics = set()
 
         for i, paper in enumerate(papers):
-            if paper['category'] in selected_topics and len(selected_topics) >= 2:
+            if paper["category"] in selected_topics and len(selected_topics) >= 2:
                 continue
 
             if len(recommended) < 2:
-                hot_keywords = ['transformer', 'llm', 'diffusion', 'reinforcement', 'gpt', 'neural']
-                summary_lower = paper['summary'].lower()
+                hot_keywords = ["transformer", "llm", "diffusion", "reinforcement", "gpt", "neural"]
+                summary_lower = paper["summary"].lower()
                 hot_count = sum(1 for kw in hot_keywords if kw in summary_lower)
 
                 reason = f"最新发布的 {paper['category']} 论文"
                 if hot_count > 0:
                     reason = f"{paper['category']} 热门方向论文，包含 {hot_count} 个热点关键词"
 
-                recommended.append({
-                    "index": i,
-                    "title": paper['title'],
-                    "reason": reason,
-                    "summary": paper['summary'][:200] + "...",
-                    "category": paper['category'],
-                    "url": paper['url'],
-                    "pdf_url": paper['pdf_url'],
-                    "authors": paper['authors'],
-                    "published": paper['published'],
-                })
+                recommended.append(
+                    {
+                        "index": i,
+                        "title": paper["title"],
+                        "reason": reason,
+                        "summary": paper["summary"][:200] + "...",
+                        "category": paper["category"],
+                        "url": paper["url"],
+                        "pdf_url": paper["pdf_url"],
+                        "authors": paper["authors"],
+                        "published": paper["published"],
+                    }
+                )
 
-                selected_topics.add(paper['category'])
+                selected_topics.add(paper["category"])
 
         print(f"[OK] 回退分析完成，推荐 {len(recommended)} 篇论文")
         return recommended
@@ -261,19 +263,19 @@ def create_issues(recommended: list[dict], repo_name: str, token: str) -> int:
 
         body = f"""## 论文信息
 
-**标题**: [{paper['title']}]({paper['url']})
-**作者**: {paper['authors']}
-**发布时间**: {paper['published']}
-**分类**: {paper['category']}
-**PDF**: [Download]({paper['pdf_url']})
+**标题**: [{paper["title"]}]({paper["url"]})
+**作者**: {paper["authors"]}
+**发布时间**: {paper["published"]}
+**分类**: {paper["category"]}
+**PDF**: [Download]({paper["pdf_url"]})
 
 ## 简介
 
-{paper['summary']}
+{paper["summary"]}
 
 ## 推荐理由
 
-{paper['reason']}
+{paper["reason"]}
 
 ## 讨论
 
@@ -319,15 +321,13 @@ def main(argv: list[str] | None = None) -> int:
     logger.setLevel(log_level)
 
     # 默认 7 天前
-    last_scan = args.last_scan or (
-        datetime.now() - datetime.timedelta(days=7)
-    ).strftime("%Y-%m-%dT%H:%M:%SZ")
+    last_scan = args.last_scan or (datetime.now() - datetime.timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     categories = [c.strip() for c in args.categories.split(",") if c.strip()]
 
-    logger.info(f"{'='*60}")
+    logger.info(f"{'=' * 60}")
     logger.info("[arXiv Monitor] 开始扫描新论文")
-    logger.info(f"{'='*60}")
+    logger.info(f"{'=' * 60}")
     logger.info(f"分类: {', '.join(categories)}")
     logger.info(f"上次扫描: {last_scan}")
 
@@ -363,7 +363,7 @@ def main(argv: list[str] | None = None) -> int:
             if len(new_papers) == 0:
                 logger.info("所有论文已存在，无需推荐")
             elif len(new_papers) < 2:
-                logger.info(f"新论文数量不足 2 篇，无法智能推荐")
+                logger.info("新论文数量不足 2 篇，无法智能推荐")
             else:
                 logger.info("智能分析未返回有效结果")
             return 0
@@ -371,9 +371,9 @@ def main(argv: list[str] | None = None) -> int:
         # 创建 Issues
         logger.info("开始创建 Issues...")
         created = create_issues(recommended, args.repo, args.token)
-        logger.info(f"{'='*60}")
+        logger.info(f"{'=' * 60}")
         logger.info(f"[完成] 创建 {created} 个 Issues")
-        logger.info(f"{'='*60}")
+        logger.info(f"{'=' * 60}")
     else:
         logger.info("提供 --token 和 --repo 参数可自动分析并创建 Issues")
         for i, p in enumerate(papers, 1):
@@ -384,4 +384,5 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     import os
+
     sys.exit(main())

@@ -24,12 +24,10 @@ import os
 import re
 import sys
 import time
-from datetime import datetime, timedelta
-from pathlib import Path
-from typing import Any
-
-import urllib.request
 import urllib.parse
+import urllib.request
+from datetime import datetime, timedelta
+from typing import Any
 
 from github import Github
 
@@ -57,9 +55,9 @@ class PubMedClient:
             time.sleep(0.34 - elapsed)
         self.last_request_time = time.time()
 
-    def search(self, query: str, max_results: int = 20,
-               mindate: str = None, maxdate: str = None,
-               datetype: str = "pdat") -> list[str]:
+    def search(
+        self, query: str, max_results: int = 20, mindate: str = None, maxdate: str = None, datetype: str = "pdat"
+    ) -> list[str]:
         """搜索 PubMed，获取 PMID 列表
 
         Args:
@@ -80,7 +78,7 @@ class PubMedClient:
             "retmode": "json",
             "retmax": max_results,
             "datetype": datetype,
-            "email": self.email
+            "email": self.email,
         }
 
         if mindate:
@@ -114,12 +112,7 @@ class PubMedClient:
         self._rate_limit()
 
         ids_str = ",".join(id_list)
-        params = {
-            "db": "pubmed",
-            "id": ids_str,
-            "retmode": "json",
-            "email": self.email
-        }
+        params = {"db": "pubmed", "id": ids_str, "retmode": "json", "email": self.email}
 
         url = f"{self.BASE_URL}/esummary.fcgi?{urllib.parse.urlencode(params)}"
 
@@ -164,8 +157,7 @@ def truncate_text(text: str, max_length: int = 1500) -> str:
     return text[:max_length].rsplit(".", 1)[0] + "..."
 
 
-def fetch_papers(query: str, email: str, days: int = 7,
-                 max_papers: int = 20) -> list[dict[str, Any]]:
+def fetch_papers(query: str, email: str, days: int = 7, max_papers: int = 20) -> list[dict[str, Any]]:
     """获取 PubMed 新文献
 
     Args:
@@ -192,7 +184,7 @@ def fetch_papers(query: str, email: str, days: int = 7,
         max_results=max_papers * 2,  # 多取一些供筛选
         mindate=start_date,
         maxdate=end_date,
-        datetype="pdat"
+        datetype="pdat",
     )
 
     if not pmids:
@@ -212,27 +204,26 @@ def fetch_papers(query: str, email: str, days: int = 7,
 
         doc = details[uid]
 
-        authors = ", ".join(
-            a.get("name", "")
-            for a in doc.get("authors", [])[:5]
-        )
+        authors = ", ".join(a.get("name", "") for a in doc.get("authors", [])[:5])
         if len(doc.get("authors", [])) > 5:
             authors += f" 等 {len(doc['authors'])} 位作者"
 
         # 获取摘要 (efetch 需要另外调用，这里先用 keywords)
         keywords = doc.get("keywords", [])
 
-        papers.append({
-            "pmid": uid,
-            "title": clean_text(doc.get("title", "")),
-            "journal": doc.get("source", ""),
-            "pubdate": parse_pubmed_date(doc.get("pubdate", "")),
-            "authors": authors,
-            "doi": doc.get("doi", ""),
-            "url": f"https://pubmed.ncbi.nlm.nih.gov/{uid}/",
-            "keywords": keywords if isinstance(keywords, list) else [],
-            "has_abstract": doc.get("hasabstract", 0),
-        })
+        papers.append(
+            {
+                "pmid": uid,
+                "title": clean_text(doc.get("title", "")),
+                "journal": doc.get("source", ""),
+                "pubdate": parse_pubmed_date(doc.get("pubdate", "")),
+                "authors": authors,
+                "doi": doc.get("doi", ""),
+                "url": f"https://pubmed.ncbi.nlm.nih.gov/{uid}/",
+                "keywords": keywords if isinstance(keywords, list) else [],
+                "has_abstract": doc.get("hasabstract", 0),
+            }
+        )
 
     # 按日期排序（最新的在前）
     papers.sort(key=lambda x: x.get("pubdate", ""), reverse=True)
@@ -243,10 +234,10 @@ def fetch_papers(query: str, email: str, days: int = 7,
 def build_papers_for_observer(papers: list[dict], query: str) -> str:
     """构建供 Observer 分析的文献上下文"""
     lines = [
-        f"## PubMed 文献候选\n",
+        "## PubMed 文献候选\n",
         f"**检索词**: {query}\n",
         f"**候选数量**: {len(papers)} 篇\n",
-        f"---\n",
+        "---\n",
     ]
 
     for i, paper in enumerate(papers):
@@ -256,7 +247,7 @@ def build_papers_for_observer(papers: list[dict], query: str) -> str:
         lines.append(f"**期刊**: {paper['journal']}")
         lines.append(f"**发表日期**: {paper['pubdate']}")
         lines.append(f"**作者**: {paper['authors']}")
-        if paper.get('keywords'):
+        if paper.get("keywords"):
             lines.append(f"**关键词**: {', '.join(paper['keywords'][:5])}")
         lines.append("")
 
@@ -284,7 +275,7 @@ def filter_existing_papers(papers: list[dict], repo_name: str, token: str) -> li
     thirty_days_ago = datetime.now() - timedelta(days=30)
     existing_titles = set()
 
-    for issue in repo.get_issues(state='all', since=thirty_days_ago):
+    for issue in repo.get_issues(state="all", since=thirty_days_ago):
         # 只检查我们自己创建的文献 Issue
         if issue.title.startswith("[文献]"):
             existing_titles.add(issue.title.lower())
@@ -307,34 +298,30 @@ def filter_existing_papers(papers: list[dict], repo_name: str, token: str) -> li
 def analyze_with_observer(papers: list[dict], query: str, token: str) -> list[dict]:
     """使用 Observer agent 分析文献，返回推荐的文献"""
 
-    import asyncio
-    from issuelab.agents.observer import run_observer_for_papers
-
-    logger.info(f"\n{'='*60}")
+    logger.info(f"\n{'=' * 60}")
     logger.info(f"[Observer Agent] 开始智能分析 {len(papers)} 篇文献")
-    logger.info(f"{'='*60}")
+    logger.info(f"{'=' * 60}")
 
     # 如果文献不足 2 篇，无法推荐
     if len(papers) < 2:
-        logger.warning(f"文献数量不足 2 篇，无法进行智能推荐")
+        logger.warning("文献数量不足 2 篇，无法进行智能推荐")
         return []
-
-    # 构建上下文（适配 arxiv_observer 的格式）
-    papers_context = build_papers_for_observer(papers, query)
 
     # 转换格式以适配现有 observer
     adapted_papers = []
-    for i, paper in enumerate(papers):
-        adapted_papers.append({
-            "id": paper['pmid'],
-            "title": paper['title'],
-            "summary": paper.get('keywords', [])[:3],  # 用关键词替代摘要
-            "url": paper['url'],
-            "pdf_url": paper['doi'],  # 用 DOI 替代 PDF
-            "authors": paper['authors'],
-            "published": paper['pubdate'],
-            "category": paper['journal'],
-        })
+    for _i, paper in enumerate(papers):
+        adapted_papers.append(
+            {
+                "id": paper["pmid"],
+                "title": paper["title"],
+                "summary": paper.get("keywords", [])[:3],  # 用关键词替代摘要
+                "url": paper["url"],
+                "pdf_url": paper["doi"],  # 用 DOI 替代 PDF
+                "authors": paper["authors"],
+                "published": paper["pubdate"],
+                "category": paper["journal"],
+            }
+        )
 
     # 调用 Observer
     try:
@@ -351,15 +338,14 @@ def heuristic_selection(papers: list[dict], query: str) -> list[dict]:
     """启发式规则选择高质量文献"""
 
     recommended = []
-    selected_journals = set()
 
     for i, paper in enumerate(papers):
         # 期刊权重（简化版）
-        journal = paper.get('journal', '').lower()
+        journal = paper.get("journal", "").lower()
 
         # 高影响因子期刊列表（简化判断）
-        high_impact_keywords = ['nature', 'science', 'cell', 'pnas', 'national']
-        med_impact_keywords = ['evolutionary', 'molecular', 'genetics', 'ecology']
+        high_impact_keywords = ["nature", "science", "cell", "pnas", "national"]
+        med_impact_keywords = ["evolutionary", "molecular", "genetics", "ecology"]
 
         if any(kw in journal for kw in high_impact_keywords):
             priority = 3
@@ -372,36 +358,38 @@ def heuristic_selection(papers: list[dict], query: str) -> list[dict]:
         score = priority
 
         # 发表日期加分（越新越高）
-        pubdate = paper.get('pubdate', '')
+        pubdate = paper.get("pubdate", "")
         if pubdate and "2025" in str(pubdate):
             score += 1
         if pubdate and "2026" in str(pubdate):
             score += 2
 
         # 关键词匹配加分
-        title_lower = paper.get('title', '').lower()
-        query_terms = ['speciation', 'hybrid', 'introgression']
+        title_lower = paper.get("title", "").lower()
+        query_terms = ["speciation", "hybrid", "introgression"]
         match_count = sum(1 for term in query_terms if term in title_lower)
         score += match_count * 0.5
 
         reason = f"期刊优先级: {priority}级, 关键词匹配: {match_count}个"
 
-        recommended.append({
-            "index": i,
-            "pmid": paper['pmid'],
-            "title": paper['title'],
-            "reason": reason,
-            "journal": paper['journal'],
-            "pubdate": paper['pubdate'],
-            "authors": paper['authors'],
-            "doi": paper['doi'],
-            "url": paper['url'],
-            "keywords": paper.get('keywords', []),
-            "score": score,
-        })
+        recommended.append(
+            {
+                "index": i,
+                "pmid": paper["pmid"],
+                "title": paper["title"],
+                "reason": reason,
+                "journal": paper["journal"],
+                "pubdate": paper["pubdate"],
+                "authors": paper["authors"],
+                "doi": paper["doi"],
+                "url": paper["url"],
+                "keywords": paper.get("keywords", []),
+                "score": score,
+            }
+        )
 
     # 按分数排序，取 Top 2
-    recommended.sort(key=lambda x: x['score'], reverse=True)
+    recommended.sort(key=lambda x: x["score"], reverse=True)
     top2 = recommended[:2]
 
     logger.info(f"启发式筛选完成，推荐 {len(top2)} 篇文献")
@@ -409,8 +397,7 @@ def heuristic_selection(papers: list[dict], query: str) -> list[dict]:
     return top2
 
 
-def create_issues(recommended: list[dict], repo_name: str, token: str,
-                  query: str) -> int:
+def create_issues(recommended: list[dict], repo_name: str, token: str, query: str) -> int:
     """根据 Observer 推荐创建 GitHub Issues"""
 
     if not recommended:
@@ -423,17 +410,19 @@ def create_issues(recommended: list[dict], repo_name: str, token: str,
     created = 0
 
     # 构建 Issue 主体
-    papers_list = "\n\n---\n\n".join([
-        f"""### {i+1}. {paper['title']}
+    papers_list = "\n\n---\n\n".join(
+        [
+            f"""### {i + 1}. {paper["title"]}
 
-- **PMID**: [{paper['pmid']}]({paper['url']})
-- **DOI**: [{paper['doi']}](https://doi.org/{paper['doi']}) if paper['doi'] else 'N/A'
-- **期刊**: {paper['journal']}
-- **发表日期**: {paper['pubdate']}
-- **作者**: {paper['authors']}
-- **推荐理由**: {paper['reason']}"""
-        for i, paper in enumerate(recommended)
-    ])
+- **PMID**: [{paper["pmid"]}]({paper["url"]})
+- **DOI**: [{paper["doi"]}](https://doi.org/{paper["doi"]}) if paper['doi'] else 'N/A'
+- **期刊**: {paper["journal"]}
+- **发表日期**: {paper["pubdate"]}
+- **作者**: {paper["authors"]}
+- **推荐理由**: {paper["reason"]}"""
+            for i, paper in enumerate(recommended)
+        ]
+    )
 
     body = f"""## PubMed 文献速递
 
@@ -470,24 +459,17 @@ _由 PubMed Monitor 自动创建_
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="PubMed Monitor - 智能获取并分析文献"
-    )
+    parser = argparse.ArgumentParser(description="PubMed Monitor - 智能获取并分析文献")
     parser.add_argument("--token", type=str, help="GitHub Token")
     parser.add_argument("--repo", type=str, help="Repository (owner/repo)")
-    parser.add_argument("--query", type=str,
-                        default="(speciation) OR (hybrid speciation) OR (introgression)",
-                        help="PubMed 检索词")
-    parser.add_argument("--days", type=int, default=1,
-                        help="追溯天数（默认: 1，即最近 1 天）")
-    parser.add_argument("--max-papers", type=int, default=10,
-                        help="获取文献数量（分析前，默认: 10）")
-    parser.add_argument("--output", type=str,
-                        help="Output JSON file (optional)")
-    parser.add_argument("--email", type=str,
-                        help="PubMed 联系邮箱（必填）")
-    parser.add_argument("--scan-only", action="store_true",
-                        help="Only scan, don't analyze")
+    parser.add_argument(
+        "--query", type=str, default="(speciation) OR (hybrid speciation) OR (introgression)", help="PubMed 检索词"
+    )
+    parser.add_argument("--days", type=int, default=1, help="追溯天数（默认: 1，即最近 1 天）")
+    parser.add_argument("--max-papers", type=int, default=10, help="获取文献数量（分析前，默认: 10）")
+    parser.add_argument("--output", type=str, help="Output JSON file (optional)")
+    parser.add_argument("--email", type=str, help="PubMed 联系邮箱（必填）")
+    parser.add_argument("--scan-only", action="store_true", help="Only scan, don't analyze")
 
     args = parser.parse_args(argv)
 
@@ -498,25 +480,18 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     # 日志级别
-    log_level = getattr(logging,
-                        os.environ.get("LOG_LEVEL", "INFO").upper(),
-                        logging.INFO)
+    log_level = getattr(logging, os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO)
     logging.getLogger().setLevel(log_level)
     logger.setLevel(log_level)
 
-    logger.info(f"{'='*60}")
+    logger.info(f"{'=' * 60}")
     logger.info("[PubMed Monitor] 开始扫描新文献")
-    logger.info(f"{'='*60}")
+    logger.info(f"{'=' * 60}")
     logger.info(f"检索词: {args.query}")
     logger.info(f"追溯天数: {args.days}")
 
     # 获取文献
-    papers = fetch_papers(
-        query=args.query,
-        email=email,
-        days=args.days,
-        max_papers=args.max_papers
-    )
+    papers = fetch_papers(query=args.query, email=email, days=args.days, max_papers=args.max_papers)
     logger.info(f"发现 {len(papers)} 篇候选文献")
 
     if not papers:
@@ -547,7 +522,7 @@ def main(argv: list[str] | None = None) -> int:
             if len(new_papers) == 0:
                 logger.info("所有文献已存在，无需推荐")
             elif len(new_papers) < 2:
-                logger.info(f"新文献数量不足 2 篇，无法智能推荐")
+                logger.info("新文献数量不足 2 篇，无法智能推荐")
             else:
                 logger.info("智能分析未返回有效结果")
             return 0
@@ -555,9 +530,9 @@ def main(argv: list[str] | None = None) -> int:
         # 创建 Issues
         logger.info("开始创建 Issues...")
         created = create_issues(recommended, args.repo, args.token, args.query)
-        logger.info(f"{'='*60}")
+        logger.info(f"{'=' * 60}")
         logger.info(f"[完成] 创建 {created} 个 Issues")
-        logger.info(f"{'='*60}")
+        logger.info(f"{'=' * 60}")
     else:
         logger.info("提供 --token 和 --repo 参数可自动分析并创建 Issues")
         for i, p in enumerate(papers, 1):

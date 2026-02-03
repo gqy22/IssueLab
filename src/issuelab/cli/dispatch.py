@@ -65,10 +65,10 @@ def load_registry(agents_dir: Path) -> dict[str, dict[str, Any]]:
             registry[username] = config
 
         except yaml.YAMLError as e:
-            print(f"Error parsing {yml_file.name}: {e}", file=sys.stderr)
+            print(f"Error parsing {agent_yml.name}: {e}", file=sys.stderr)
             continue
         except Exception as e:
-            print(f"Error loading {yml_file.name}: {e}", file=sys.stderr)
+            print(f"Error loading {agent_yml.name}: {e}", file=sys.stderr)
             continue
 
     return registry
@@ -443,9 +443,7 @@ def main(argv: list[str] | None = None) -> int:
     """
     parser = argparse.ArgumentParser(description="Dispatch events to user repositories")
     parser.add_argument("--mentions", required=True, help="Mentions list (JSON array or comma-separated)")
-    parser.add_argument(
-        "--agents-dir", default="agents", help="Agents directory (default: agents)"
-    )
+    parser.add_argument("--agents-dir", default="agents", help="Agents directory (default: agents)")
     parser.add_argument("--source-repo", required=True, help="Source repository (owner/repo)")
     parser.add_argument("--issue-number", required=True, type=int, help="Issue number")
     parser.add_argument("--issue-title", help="Issue title")
@@ -476,7 +474,7 @@ def main(argv: list[str] | None = None) -> int:
     issue_body = args.issue_body
     if args.issue_body_file:
         try:
-            with open(args.issue_body_file, "r", encoding="utf-8") as f:
+            with open(args.issue_body_file, encoding="utf-8") as f:
                 issue_body = f.read()
         except Exception as e:
             print(f"Error reading issue-body-file: {e}", file=sys.stderr)
@@ -485,7 +483,7 @@ def main(argv: list[str] | None = None) -> int:
     comment_body = args.comment_body
     if args.comment_body_file:
         try:
-            with open(args.comment_body_file, "r", encoding="utf-8") as f:
+            with open(args.comment_body_file, encoding="utf-8") as f:
                 comment_body = f.read()
         except Exception as e:
             print(f"Error reading comment-body-file: {e}", file=sys.stderr)
@@ -573,7 +571,9 @@ def main(argv: list[str] | None = None) -> int:
     # 添加可用智能体列表
     if args.available_agents:
         try:
-            agents_list = json.loads(args.available_agents) if isinstance(args.available_agents, str) else args.available_agents
+            agents_list = (
+                json.loads(args.available_agents) if isinstance(args.available_agents, str) else args.available_agents
+            )
             client_payload["available_agents"] = json.dumps(agents_list, ensure_ascii=False)
             print(f"Including {len(agents_list)} available agents in payload")
         except json.JSONDecodeError:

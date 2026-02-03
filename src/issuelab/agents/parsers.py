@@ -152,18 +152,20 @@ def parse_papers_recommendation(response: str, paper_count: int) -> list[dict]:
         if index < 0 or index >= paper_count:
             continue
 
-        recommended.append({
-            "index": index,
-            "title": item.get("title", ""),
-            "reason": item.get("reason", ""),
-            "summary": item.get("summary", ""),
-            # 以下字段需要从原始论文数据中获取
-            "category": "",
-            "url": "",
-            "pdf_url": "",
-            "authors": "",
-            "published": "",
-        })
+        recommended.append(
+            {
+                "index": index,
+                "title": item.get("title", ""),
+                "reason": item.get("reason", ""),
+                "summary": item.get("summary", ""),
+                # 以下字段需要从原始论文数据中获取
+                "category": "",
+                "url": "",
+                "pdf_url": "",
+                "authors": "",
+                "published": "",
+            }
+        )
 
     logger.info(f"解析到 {len(recommended)} 篇推荐论文")
     return recommended

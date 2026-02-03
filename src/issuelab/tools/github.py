@@ -129,17 +129,17 @@ def post_comment(
 
         # 1. 提取所有 @mentions
         all_mentions = extract_mentions(body)
-        
+
         # 2. 应用策略过滤
         if all_mentions:
             allowed_mentions, filtered_mentions = filter_mentions(all_mentions)
-            
+
             if filtered_mentions:
                 logger.info(f"[FILTER] 过滤了 {len(filtered_mentions)} 个 @mentions: {filtered_mentions}")
-            
+
             # 3. 清理主体内容（@ → "用户 xxx"）
             body = clean_mentions_in_text(body)
-            
+
             # 4. 使用过滤后的 mentions
             mentions = allowed_mentions
         else:

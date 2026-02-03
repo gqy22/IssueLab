@@ -123,9 +123,7 @@ class TestUserAgentTrigger:
         monkeypatch.setenv("GITHUB_REPOSITORY", "test/repo")
         mock_dispatch.return_value = 0
 
-        result = trigger_user_agent(
-            username="gqy22", issue_number=42, issue_title="Test Issue", issue_body="Test body"
-        )
+        result = trigger_user_agent(username="gqy22", issue_number=42, issue_title="Test Issue", issue_body="Test body")
 
         mock_dispatch.assert_called_once()
         assert result is True
@@ -181,9 +179,7 @@ class TestObserverAutoTrigger:
         mock_is_builtin.return_value = True
         mock_trigger_builtin.return_value = True
 
-        result = auto_trigger_agent(
-            agent_name="moderator", issue_number=1, issue_title="Test", issue_body="Body"
-        )
+        result = auto_trigger_agent(agent_name="moderator", issue_number=1, issue_title="Test", issue_body="Body")
 
         mock_trigger_builtin.assert_called_once_with("moderator", 1)
         assert result is True

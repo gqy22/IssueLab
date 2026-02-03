@@ -93,7 +93,7 @@ def main(argv: list[str] | None = None) -> int:
     issue_body = args.issue_body
     if args.issue_body_file:
         try:
-            with open(args.issue_body_file, "r", encoding="utf-8") as f:
+            with open(args.issue_body_file, encoding="utf-8") as f:
                 issue_body = f.read()
         except Exception as e:
             print(f"Error reading issue-body-file: {e}", file=sys.stderr)
@@ -102,7 +102,7 @@ def main(argv: list[str] | None = None) -> int:
     comment_body = args.comment_body
     if args.comment_body_file:
         try:
-            with open(args.comment_body_file, "r", encoding="utf-8") as f:
+            with open(args.comment_body_file, encoding="utf-8") as f:
                 comment_body = f.read()
         except Exception as e:
             print(f"Error reading comment-body-file: {e}", file=sys.stderr)

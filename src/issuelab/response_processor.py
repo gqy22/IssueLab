@@ -12,7 +12,7 @@ import re
 import subprocess
 from typing import Any, Literal, overload
 
-from issuelab.mention_policy import filter_mentions, load_mention_policy
+from issuelab.mention_policy import filter_mentions
 
 logger = logging.getLogger(__name__)
 
@@ -317,7 +317,16 @@ def close_issue(issue_number: int) -> bool:
     """
     try:
         result = subprocess.run(
-            ["gh", "issue", "close", str(issue_number), "--repo", os.environ.get("GITHUB_REPOSITORY", ""), "--reason", "completed"],
+            [
+                "gh",
+                "issue",
+                "close",
+                str(issue_number),
+                "--repo",
+                os.environ.get("GITHUB_REPOSITORY", ""),
+                "--reason",
+                "completed",
+            ],
             capture_output=True,
             text=True,
             env=os.environ.copy(),

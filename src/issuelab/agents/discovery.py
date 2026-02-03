@@ -109,6 +109,7 @@ def discover_agents() -> dict:
     # 扫描 agents 目录下的用户自定义 agent
     if AGENTS_DIR.exists():
         import yaml
+
         for agent_dir in AGENTS_DIR.iterdir():
             if not agent_dir.is_dir() or agent_dir.name.startswith("_"):
                 continue
@@ -123,7 +124,7 @@ def discover_agents() -> dict:
             agent_name = agent_dir.name
 
             # 从 agent.yml 读取配置
-            with open(agent_file, "r", encoding="utf-8") as f:
+            with open(agent_file, encoding="utf-8") as f:
                 agent_config = yaml.safe_load(f)
 
             # 读取 prompt 内容（移除可能的 frontmatter）

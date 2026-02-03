@@ -80,9 +80,14 @@ def trigger_builtin_agent(agent_name: str, issue_number: int) -> bool:
     try:
         subprocess.run(
             [
-                "gh", "workflow", "run", "agent.yml",
-                "-f", f"agent={agent_name.lower()}",
-                "-f", f"issue_number={issue_number}"
+                "gh",
+                "workflow",
+                "run",
+                "agent.yml",
+                "-f",
+                f"agent={agent_name.lower()}",
+                "-f",
+                f"issue_number={issue_number}",
             ],
             check=True,
             capture_output=True,
@@ -142,6 +147,7 @@ def trigger_user_agent(username: str, issue_number: int, issue_title: str, issue
 def trigger_local_user_agent(username: str, issue_number: int, issue_title: str, issue_body: str) -> bool:
     """本地执行用户agent（主仓库场景）"""
     import asyncio
+
     from issuelab.agents.executor import run_agents_parallel
     from issuelab.tools.github import get_issue_info
 
@@ -171,6 +177,7 @@ def trigger_local_user_agent(username: str, issue_number: int, issue_title: str,
 
         # 发布到Issue
         from issuelab.tools.github import post_comment
+
         if post_comment(issue_number, response):
             logger.info(f"[OK] {username} response posted to issue #{issue_number}")
             return True
@@ -183,9 +190,7 @@ def trigger_local_user_agent(username: str, issue_number: int, issue_title: str,
         return False
 
 
-def dispatch_user_agent(
-    username: str, issue_number: int, issue_title: str, issue_body: str, source_repo: str
-) -> bool:
+def dispatch_user_agent(username: str, issue_number: int, issue_title: str, issue_body: str, source_repo: str) -> bool:
     """Dispatch用户agent到fork仓库"""
     try:
         from issuelab.cli.dispatch import main as dispatch_main
@@ -243,9 +248,7 @@ def auto_trigger_agent(agent_name: str, issue_number: int, issue_title: str, iss
         return False
 
 
-def process_observer_results(
-    results: list[dict], issue_data: dict[int, dict], auto_trigger: bool = True
-) -> int:
+def process_observer_results(results: list[dict], issue_data: dict[int, dict], auto_trigger: bool = True) -> int:
     """
     处理Observer批量分析结果，自动触发agent
 

@@ -135,8 +135,7 @@ async def run_single_agent(prompt: str, agent_name: str) -> dict:
 
                 # 日志记录成本和统计
                 logger.info(
-                    f"[{agent_name}] [Stats] 成本: ${cost_usd:.4f}, "
-                    f"轮数: {result_turns}, 工具调用: {len(tool_calls)}"
+                    f"[{agent_name}] [Stats] 成本: ${cost_usd:.4f}, 轮数: {result_turns}, 工具调用: {len(tool_calls)}"
                 )
 
         result = "\n".join(response_text)
