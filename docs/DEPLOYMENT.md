@@ -26,14 +26,14 @@
 - [ ] 有权限创建 GitHub App
 - [ ] 有权限在主仓库配置 Secrets
 - [ ] 有权限在 fork 仓库配置 Secrets
-- [ ] 有 Anthropic API Key
+- [ ] 有 MiniMax API Token
 
 ### 1.3 所需服务
 
 | 服务 | 用途 | 获取方式 |
 |------|------|----------|
 | GitHub App | 跨仓库触发权限 | https://github.com/settings/apps/new |
-| Anthropic API | Claude 模型调用 | https://console.anthropic.com/settings/keys |
+| MiniMax API | MiniMax 模型调用 | https://platform.minimaxi.com/user-center/basic-information/interface-key |
 
 ---
 
@@ -131,9 +131,11 @@ gh api /app/installations --jq '.[] | {account: .account.login, id: .id}'
 |------------|------|------|----------|
 | `ISSUELAB_APP_ID` | ✅ | GitHub App ID | App 设置页面顶部 |
 | `ISSUELAB_APP_PRIVATE_KEY` | ✅ | Private Key 完整内容 | 下载的 .pem 文件内容 |
-| `ANTHROPIC_AUTH_TOKEN` | ✅ | Anthropic API Key | https://console.anthropic.com/settings/keys |
-| `ANTHROPIC_BASE_URL` | ⚪ | API 基础 URL | 默认：https://api.anthropic.com |
-| `ANTHROPIC_MODEL` | ⚪ | 模型名称 | 默认：claude-sonnet-4-20250514 |
+| `ANTHROPIC_API_TOKEN` | ✅ | MiniMax API Token | https://platform.minimaxi.com/user-center/basic-information/interface-key |
+| `ANTHROPIC_BASE_URL` | ⚪ | API Base URL | 默认：https://api.minimaxi.com/anthropic |
+| `ANTHROPIC_MODEL` | ⚪ | 模型名称 | 默认：MiniMax-M2.1 |
+
+> 💡 **提示**：也可以使用智谱 GLM Coding Plan，在智谱开放平台（https://open.bigmodel.cn/）申请后，将 API Token 填入 `ANTHROPIC_API_TOKEN`，`ANTHROPIC_BASE_URL` 设为智普 API 地址。
 
 **添加 Private Key 的正确方式：**
 
@@ -156,9 +158,9 @@ MIIEpAIBAAKCAQEA...
 
 | Secret 名称 | 必需 | 说明 |
 |------------|------|------|
-| `ANTHROPIC_AUTH_TOKEN` | ✅ | 用户自己的 API Key |
-| `ANTHROPIC_BASE_URL` | ⚪ | 可选，使用默认值或自定义 |
-| `ANTHROPIC_MODEL` | ⚪ | 可选，默认 claude-sonnet-4-20250514 |
+| `ANTHROPIC_API_TOKEN` | ✅ | 用户自己的 API Token（MiniMax 或智谱） |
+| `ANTHROPIC_BASE_URL` | ⚪ | 可选，默认 https://api.minimaxi.com/anthropic |
+| `ANTHROPIC_MODEL` | ⚪ | 可选，默认 MiniMax-M2.1 |
 | `PAT_TOKEN` | 🌟 推荐 | Personal Access Token，用于回复评论 |
 
 **PAT_TOKEN 配置步骤：**
@@ -448,8 +450,8 @@ gh run download RUN_ID -R YOUR_USERNAME/IssueLab
 **查看 API 使用量：**
 
 ```bash
-# Anthropic API 用量
-# 访问：https://console.anthropic.com/settings/usage
+# MiniMax API 用量
+# 访问：https://platform.minimaxi.com/user-center/basic-information/interface-key
 ```
 
 **GitHub Actions 配额：**
@@ -463,7 +465,7 @@ gh run download RUN_ID -R YOUR_USERNAME/IssueLab
 
 ```
 ❌ 症状：Agent 运行失败，提示 API key 无效
-✅ 解决：检查 ANTHROPIC_AUTH_TOKEN secret 是否正确配置
+✅ 解决：检查 ANTHROPIC_API_TOKEN secret 是否正确配置
 ```
 
 **错误 2：`Resource not accessible by integration`**

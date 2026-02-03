@@ -55,7 +55,7 @@ IssueLab 是一个基于 GitHub Issues + Claude Agent SDK 的 **AI 科研协作�
 ### 2.1 前置要求
 
 - GitHub 账户
-- Anthropic API Key（https://console.anthropic.com/settings/keys）
+- MiniMax API Token（https://platform.minimaxi.com/user-center/basic-information/interface-key）
 - 基本的 Git 和 GitHub 使用经验
 
 ### 2.2 Fork 仓库
@@ -70,10 +70,14 @@ IssueLab 是一个基于 GitHub Issues + Claude Agent SDK 的 **AI 科研协作�
 
 | Secret 名称 | 必需 | 说明 | 获取方式 |
 |------------|------|------|----------|
-| `ANTHROPIC_AUTH_TOKEN` | ✅ | Anthropic API Key | https://console.anthropic.com/settings/keys |
-| `PAT_TOKEN` | 🌟 推荐 | Personal Access Token | https://github.com/settings/tokens/new |
-| `ANTHROPIC_BASE_URL` | ⚪ | API 基础 URL | 可选，默认官方 API |
-| `ANTHROPIC_MODEL` | ⚪ | 模型名称 | 可选，默认 claude-sonnet-4-20250514 |
+| `ANTHROPIC_API_TOKEN` | ✅ | MiniMax API Token | https://platform.minimaxi.com/user-center/basic-information/interface-key |
+| `ANTHROPIC_BASE_URL` | ⚪ | API Base URL | 可选，默认 https://api.minimaxi.com/anthropic |
+| `ANTHROPIC_MODEL` | ⚪ | 模型名称 | 可选，默认 MiniMax-M2.1 |
+| `GITHUB_TOKEN` / `GH_TOKEN` | ✅ | GitHub 认证 | https://github.com/settings/tokens/new |
+| `PAT_TOKEN` | 🌟 推荐 | Personal Access Token | 同上，用于跨仓库操作 |
+| `ENABLE_ARXIV_MCP` | ⚪ | 启用 arXiv MCP | 可选，默认 true |
+| `ENABLE_GITHUB_MCP` | ⚪ | 启用 GitHub MCP | 可选，默认 true |
+| `LOG_LEVEL` | ⚪ | 日志级别 | 可选，默认 INFO |
 
 **配置 PAT_TOKEN（推荐）：**
 
@@ -178,7 +182,7 @@ git push origin main
 
 主仓库使用 GitHub App 进行跨仓库触发。
 
-1. 访问 GitHub App 页面（主仓库维护者会提供链接）
+1. 访问：https://github.com/apps/issuelab-bot
 2. 点击 **Install**
 3. 选择你的 fork 仓库
 4. 确认安装

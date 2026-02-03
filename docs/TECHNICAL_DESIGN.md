@@ -457,7 +457,7 @@ def auto_trigger_agent(self, agent_name: str, issue_number: int):
 - 认证请求：5000 次/小时
 - 未认证：60 次/小时
 
-**Anthropic API 限制：**
+**MiniMax API 限制：**
 - 根据账户等级不同
 
 **策略：**
@@ -502,11 +502,13 @@ with ThreadPoolExecutor(max_workers=5) as executor:
 | 公开仓库 | 无限制 | 免费 |
 | 私有仓库 | 2000 分钟/月 | $0.008/分钟 |
 
-**Anthropic API 成本：**
+**MiniMax API 成本：**
 
 | 模型 | 输入 | 输出 |
 |------|------|------|
-| Claude Sonnet 4 | $3/MTok | $15/MTok |
+| MiniMax-M2.1 | ¥15/MTok | ¥15/MTok |
+
+> 💡 提示：也可使用智谱 GLM Coding Plan，访问 https://open.bigmodel.cn/
 
 **优化策略：**
 

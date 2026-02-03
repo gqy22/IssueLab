@@ -96,12 +96,15 @@ trigger_conditions:
 | Variable | Purpose | Default |
 |----------|---------|---------|
 | `ANTHROPIC_API_TOKEN` | Anthropic API | Required |
-| `GITHUB_TOKEN` / `GH_TOKEN` | GitHub auth | Required |
-| `ANTHROPIC_MODEL` | Model name | sonnet |
-| `ANTHROPIC_BASE_URL` | API proxy URL | - |
+| `ANTHROPIC_AUTH_TOKEN` | Anthropic API (fallback) | - |
+| `GITHUB_TOKEN` / `GH_TOKEN` | GitHub auth (GH_TOKEN priority) | Required |
+| `ANTHROPIC_MODEL` | Model name | MiniMax-M2.1 |
+| `ANTHROPIC_BASE_URL` | API proxy URL | https://api.minimaxi.com/anthropic |
 | `ENABLE_ARXIV_MCP` | Enable arXiv MCP | true |
 | `ENABLE_GITHUB_MCP` | Enable GitHub MCP | true |
+| `ARXIV_STORAGE_PATH` | arXiv paper storage | ~/.arxiv-mcp-server/papers |
 | `LOG_LEVEL` | Logging level | INFO |
+| `LOG_FILE` | Log file path | - |
 | `CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK` | Skip SDK version check | true |
 
 ### Scene Configurations
