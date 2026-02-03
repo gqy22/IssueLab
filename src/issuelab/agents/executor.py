@@ -180,7 +180,7 @@ async def run_agents_parallel(
     Args:
         issue_number: Issue 编号
         agents: 代理名称列表
-        context: 上下文信息
+        context: 上下文信息（Issue 标题、内容、评论等）
         comment_count: 评论数量（用于增强上下文）
         available_agents: 系统中可用的智能体列表
 
@@ -195,12 +195,14 @@ async def run_agents_parallel(
             }
         }
     """
-    # 构建增强的上下文
-    full_context = context
-    if comment_count > 0:
-        full_context += f"\n\n**重要提示**: 本 Issue 已有 {comment_count} 条历史评论。Summarizer 代理应读取并分析这些评论，提取共识、分歧和行动项。"
+    from issuelab.agents.discovery import load_prompt
 
-    # 添加可用智能体上下文
+    # 构建任务上下文（Issue 信息）
+    task_context = context
+    if comment_count > 0:
+        task_context += f"\n\n**重要提示**: 本 Issue 已有 {comment_count} 条历史评论。请仔细阅读并分析这些评论。"
+
+    # 添加可用智能体上下文（用于协作）
     agents_context = ""
     if available_agents:
         agents_context = "\n\n## 系统中的其他智能体\n\n"
@@ -216,21 +218,41 @@ async def run_agents_parallel(
         agents_context += "- 仅在确实需要协作时才@，不要无脑@\n"
         agents_context += "- 示例场景：需要分诊→@gqy20；需要评审→@gqy22\n"
 
-        full_context += agents_context
-
-    base_prompt = f"""请对 GitHub Issue #{issue_number} 执行以下任务：
-
-{full_context}
-
-请以 [Agent: {{agent_name}}] 为前缀发布你的回复。"""
+        task_context += agents_context
 
     results: dict[str, dict] = {}
     total_cost = 0.0
 
-    async def run_agent_task(agent_name: str, prompt: str, results: dict[str, dict]) -> None:
+    async def run_agent_task(agent_name: str, results: dict[str, dict]) -> None:
         """并行任务：运行单个 agent"""
         logger.info(f"[Issue#{issue_number}] [并行] 开始执行 {agent_name}")
-        result = await run_single_agent(prompt, agent_name)
+
+        # 1. 加载 agent 的专属 prompt（定义角色和职责）
+        agent_prompt = load_prompt(agent_name)
+        if not agent_prompt:
+            logger.warning(f"[{agent_name}] 未找到 prompt 文件，使用默认配置")
+            agent_prompt = f"你是 {agent_name} 代理。"
+
+        # 2. 构建最终 prompt：角色定义 + 当前任务
+        final_prompt = f"""{agent_prompt}
+
+---
+
+## 当前任务
+
+你需要分析 GitHub Issue #{issue_number}：
+
+{task_context}
+
+---
+
+**输出要求**：
+- 请以 [Agent: {agent_name}] 为前缀发布你的回复
+- 专注于 Issue 的讨论话题和内容
+- 不要去分析项目代码或架构（除非 Issue 明确要求）
+"""
+
+        result = await run_single_agent(final_prompt, agent_name)
         results[agent_name] = result
         total_cost_local = result.get("cost_usd", 0.0)
         logger.info(
@@ -243,8 +265,7 @@ async def run_agents_parallel(
     # 使用 anyio.create_task_group 实现真正的并行执行
     async with anyio.create_task_group() as tg:
         for agent in agents:
-            prompt = base_prompt.format(agent_name=agent)
-            tg.start_soon(run_agent_task, agent, prompt, results)
+            tg.start_soon(run_agent_task, agent, results)
 
     # 汇总总成本
     total_cost = sum(r.get("cost_usd", 0.0) for r in results.values())

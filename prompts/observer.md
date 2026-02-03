@@ -146,14 +146,6 @@ recommended:
 
 ## 当前任务
 
-请分析以下 Issue 并决定是否需要触发其他 Agent：
+请分析以下内容并输出对应格式：
 
-**Issue 编号**: __ISSUE_NUMBER__
-
-**Issue 标题**: __ISSUE_TITLE__
-
-**Issue 内容**:
-__ISSUE_BODY__
-
-**历史评论**:
-__COMMENTS__
+__TASK_SECTION__

@@ -55,7 +55,21 @@ async def run_observer(issue_number: int, issue_title: str = "", issue_body: str
             content_lines.append(line)
     prompt = "\n".join(content_lines)
 
+    # Issue 分析模式任务说明
+    issue_task = """请分析以下 GitHub Issue 并决定是否需要触发其他 Agent：
+
+**Issue 编号**: __ISSUE_NUMBER__
+
+**Issue 标题**: __ISSUE_TITLE__
+
+**Issue 内容**:
+__ISSUE_BODY__
+
+**历史评论**:
+__COMMENTS__"""
+
     # 使用唯一的占位符标记替换
+    prompt = prompt.replace("__TASK_SECTION__", issue_task)
     prompt = prompt.replace("__ISSUE_NUMBER__", str(issue_number))
     prompt = prompt.replace("__ISSUE_TITLE__", issue_title)
     prompt = prompt.replace("__ISSUE_BODY__", issue_body or "无内容")
@@ -191,14 +205,33 @@ async def run_observer_for_papers(papers: list[dict]) -> list[dict]:
             content_lines.append(line)
     prompt = "\n".join(content_lines)
 
+    # arXiv 论文分析模式任务说明
+    arxiv_task = """请分析下方的 arXiv 论文候选列表，推荐值得讨论的论文。
+
+**分析要求**：
+- 每批论文最多推荐 2-3 篇
+- 优先选择不同方向的论文，避免主题重复
+- 优先选择热门方向（LLM、CV、NLP）、创新性强、时效性高的论文
+
+**输出格式**：请直接输出 YAML 代码块，包含 analysis 和 recommended 字段"""
+
+    # Issue 分析模式任务说明
+    issue_task = """请分析以下 GitHub Issue 并决定是否需要触发其他 Agent：
+
+**Issue 编号**: __ISSUE_NUMBER__
+
+**Issue 标题**: __ISSUE_TITLE__
+
+**Issue 内容**:
+__ISSUE_BODY__
+
+**历史评论**:
+__COMMENTS__"""
+
     # 使用唯一的占位符标记替换
     prompt = prompt.replace("__AGENT_MATRIX__", agent_matrix)
     prompt = prompt.replace("__PAPERS_CONTEXT__", papers_context)
-    # arXiv 论文分析模式下，Issue 相关占位符设置为空或默认值
-    prompt = prompt.replace("__ISSUE_NUMBER__", "N/A（论文分析模式）")
-    prompt = prompt.replace("__ISSUE_TITLE__", "arXiv 论文批量分析")
-    prompt = prompt.replace("__ISSUE_BODY__", "无（请基于上方论文列表进行分析）")
-    prompt = prompt.replace("__COMMENTS__", "无评论")
+    prompt = prompt.replace("__TASK_SECTION__", arxiv_task)
 
     logger.info(f"[Observer] 开始分析 {len(papers)} 篇候选论文")
 
