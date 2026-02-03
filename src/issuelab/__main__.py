@@ -126,7 +126,6 @@ def main():
             context += f"\n\n**本 Issue 共有 {comment_count} 条历史评论，请仔细阅读并分析：**\n\n{comments}"
 
         # 注入协作指南
-        from issuelab.agents.discovery import discover_agents
         from issuelab.collaboration import build_collaboration_guidelines
 
         agents = discover_agents()
@@ -421,7 +420,6 @@ def main():
 请直接给出你的专业回复，不需要任何前缀或说明。"""
 
         # 注入协作指南
-        from issuelab.agents.discovery import discover_agents
         from issuelab.collaboration import build_collaboration_guidelines
 
         agents = discover_agents()
