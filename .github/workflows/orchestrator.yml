@@ -51,8 +51,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
           ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
-          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
-          ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL || 'https://api.minimaxi.com/anthropic' }}
+          ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL || 'MiniMax-M2.1' }}
           LOG_FILE: ${{ github.workspace }}/logs/auto_review_${{ github.event.issue.number }}.log
           LOG_LEVEL: DEBUG
           CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK: "true"
@@ -146,6 +146,10 @@ jobs:
         with:
           agent-name: moderator
           issue-number: ${{ github.event.issue.number }}
+          gh-token: ${{ secrets.PAT_TOKEN }}
+          anthropic-auth-token: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
+          anthropic-base-url: ${{ secrets.ANTHROPIC_BASE_URL || 'https://api.minimaxi.com/anthropic' }}
+          anthropic-model: ${{ secrets.ANTHROPIC_MODEL || 'MiniMax-M2.1' }}
       - uses: actions/upload-artifact@v4
         with:
           name: moderator-logs-${{ github.event.issue.number }}
@@ -169,6 +173,10 @@ jobs:
         with:
           agent-name: reviewer_a
           issue-number: ${{ github.event.issue.number }}
+          gh-token: ${{ secrets.PAT_TOKEN }}
+          anthropic-auth-token: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
+          anthropic-base-url: ${{ secrets.ANTHROPIC_BASE_URL || 'https://api.minimaxi.com/anthropic' }}
+          anthropic-model: ${{ secrets.ANTHROPIC_MODEL || 'MiniMax-M2.1' }}
       - uses: actions/upload-artifact@v4
         with:
           name: reviewer-a-logs-${{ github.event.issue.number }}
@@ -192,6 +200,10 @@ jobs:
         with:
           agent-name: reviewer_b
           issue-number: ${{ github.event.issue.number }}
+          gh-token: ${{ secrets.PAT_TOKEN }}
+          anthropic-auth-token: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
+          anthropic-base-url: ${{ secrets.ANTHROPIC_BASE_URL || 'https://api.minimaxi.com/anthropic' }}
+          anthropic-model: ${{ secrets.ANTHROPIC_MODEL || 'MiniMax-M2.1' }}
       - uses: actions/upload-artifact@v4
         with:
           name: reviewer-b-logs-${{ github.event.issue.number }}
@@ -215,6 +227,10 @@ jobs:
         with:
           agent-name: summarizer
           issue-number: ${{ github.event.issue.number }}
+          gh-token: ${{ secrets.PAT_TOKEN }}
+          anthropic-auth-token: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
+          anthropic-base-url: ${{ secrets.ANTHROPIC_BASE_URL || 'https://api.minimaxi.com/anthropic' }}
+          anthropic-model: ${{ secrets.ANTHROPIC_MODEL || 'MiniMax-M2.1' }}
 
       - name: Check for auto-close
         if: always()
@@ -253,6 +269,10 @@ jobs:
         with:
           agent-name: echo
           issue-number: ${{ github.event.issue.number }}
+          gh-token: ${{ secrets.PAT_TOKEN }}
+          anthropic-auth-token: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
+          anthropic-base-url: ${{ secrets.ANTHROPIC_BASE_URL || 'https://api.minimaxi.com/anthropic' }}
+          anthropic-model: ${{ secrets.ANTHROPIC_MODEL || 'MiniMax-M2.1' }}
       - uses: actions/upload-artifact@v4
         with:
           name: echo-logs-${{ github.event.issue.number }}
@@ -354,8 +374,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
           ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
-          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
-          ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL || 'https://api.minimaxi.com/anthropic' }}
+          ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL || 'MiniMax-M2.1' }}
           LOG_FILE: ${{ github.workspace }}/logs/review_${{ github.event.issue.number }}.log
           LOG_LEVEL: DEBUG
           CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK: "true"
@@ -404,8 +424,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
           ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
-          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
-          ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL || 'https://api.minimaxi.com/anthropic' }}
+          ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL || 'MiniMax-M2.1' }}
           LOG_FILE: ${{ github.workspace }}/logs/triggered_${{ steps.extract_agent.outputs.agent_name }}_${{ github.event.issue.number }}.log
           LOG_LEVEL: DEBUG
           CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK: "true"

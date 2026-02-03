@@ -39,8 +39,8 @@ env:
   PUBMED_EMAIL: ${{ secrets.PUBMED_EMAIL }}
   # Anthropic API 配置
   ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
-  ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
-  ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
+  ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL || 'https://api.minimaxi.com/anthropic' }}
+  ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL || 'MiniMax-M2.1' }}
   CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK: "true"
 
 jobs:

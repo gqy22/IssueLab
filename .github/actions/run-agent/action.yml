@@ -12,6 +12,20 @@ inputs:
     description: Issue 编号
     required: true
     default: ${{ github.event.issue.number }}
+  gh-token:
+    description: GitHub Token (PAT or default)
+    required: true
+  anthropic-auth-token:
+    description: Anthropic Auth Token
+    required: true
+  anthropic-base-url:
+    description: Anthropic Base URL
+    required: false
+    default: 'https://api.minimaxi.com/anthropic'
+  anthropic-model:
+    description: Anthropic Model
+    required: false
+    default: 'MiniMax-M2.1'
 
 runs:
   using: composite
@@ -24,11 +38,11 @@ runs:
           --agents ${{ inputs.agent-name }} \
           --post
       env:
-        GH_TOKEN: ${{ secrets.PAT_TOKEN || github.token }}
-        GITHUB_TOKEN: ${{ secrets.PAT_TOKEN || github.token }}
-        ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
-        ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
-        ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
+        GH_TOKEN: ${{ inputs.gh-token }}
+        GITHUB_TOKEN: ${{ inputs.gh-token }}
+        ANTHROPIC_AUTH_TOKEN: ${{ inputs.anthropic-auth-token }}
+        ANTHROPIC_BASE_URL: ${{ inputs.anthropic-base-url }}
+        ANTHROPIC_MODEL: ${{ inputs.anthropic-model }}
         LOG_FILE: ${{ github.workspace }}/logs/${{ inputs.agent-name }}_${{ inputs.issue-number }}.log
         LOG_LEVEL: DEBUG
         CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK: "true"
