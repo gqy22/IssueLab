@@ -153,34 +153,9 @@ def main():
             print(f"\n=== {agent_name} result (成本: ${cost_usd:.4f}, 轮数: {num_turns}, 工具: {tool_calls}) ===")
             print(response)
 
-            # 🔥 处理response中的@mentions（自动触发被@的agents）
-            from issuelab.response_processor import process_agent_response
-
-            processed = process_agent_response(
-                agent_name=agent_name,
-                response=result,
-                issue_number=args.issue,
-                issue_title=issue_info.get("title", ""),
-                issue_body=issue_info.get("body", ""),
-                auto_dispatch=True,  # 自动触发被@的agents
-            )
-
-            if processed["mentions"]:
-                print(f"[INFO] 发现 @mentions: {', '.join(processed['mentions'])}")
-                if processed["filtered_mentions"]:
-                    print(f"[FILTER] 过滤了: {', '.join(processed['filtered_mentions'])}")
-                if processed["allowed_mentions"]:
-                    print(f"[ALLOW] 允许: {', '.join(processed['allowed_mentions'])}")
-                for mentioned_user, success in processed["dispatch_results"].items():
-                    status = "[OK]" if success else "[ERROR]"
-                    print(f"  {status} 触发 {mentioned_user}")
-
-            # 如果需要，自动发布到 Issue
+            # 如果需要，自动发布到 Issue（auto_clean 会自动处理 @mentions）
             if getattr(args, "post", False):
-                # 使用清理后的回复 + 拼接 @ 区域
-                if post_comment(
-                    args.issue, processed["clean_response"], mentions=processed["allowed_mentions"]
-                ):
+                if post_comment(args.issue, response):
                     print(f"[OK] {agent_name} response posted to issue #{args.issue}")
                 else:
                     print(f"[ERROR] Failed to post {agent_name} response")
@@ -199,7 +174,7 @@ def main():
             print(f"\n=== {agent_name} result (成本: ${cost_usd:.4f}, 轮数: {num_turns}, 工具: {tool_calls}) ===")
             print(response)
 
-            # 如果需要，自动发布到 Issue
+            # 如果需要，自动发布到 Issue（auto_clean 会自动处理 @mentions）
             if getattr(args, "post", False):
                 if post_comment(args.issue, response):
                     print(f"[OK] {agent_name} response posted to issue #{args.issue}")
@@ -231,7 +206,7 @@ def main():
             print(f"Trigger Comment: {result.get('comment', 'N/A')}")
             print(f"Reason: {result.get('reason', 'N/A')}")
 
-            # 如果需要，自动发布触发评论
+            # 如果需要，自动发布触发评论（auto_clean 会自动处理 @mentions）
             if getattr(args, "post", False):
                 if result.get("comment") and post_comment(args.issue, result["comment"]):
                     print(f"\n[OK] Trigger comment posted to issue #{args.issue}")
@@ -329,6 +304,7 @@ def main():
                             print("  [ERROR] 自动触发失败")
 
                 # 如果需要，自动发布触发评论（已弃用，使用 auto_trigger 代替）
+                # auto_clean 会自动处理 @mentions
                 elif getattr(args, "post", False):
                     comment = result.get("comment")
                     if comment and post_comment(issue_num, comment):
@@ -458,54 +434,35 @@ def main():
         print(f"\n=== {args.agent} Response ===")
         print(response)
 
-        # 发布到主仓库
+        # 发布到主仓库（使用 post_comment 统一处理）
         if getattr(args, "post", False):
-            try:
-                # 检查是否配置了PAT
-                gh_token = os.environ.get("GH_TOKEN", "")
-                if gh_token == os.environ.get("GITHUB_TOKEN", ""):
-                    print(
-                        "\n[WARNING] 警告: 使用默认 GITHUB_TOKEN 可能无法跨仓库评论"
-                        "\n建议: 配置 PAT_TOKEN secret 以显示用户身份并获得完整权限"
-                        "\n详见: agents/_template/agent.yml 中的 GitHub Token 配置说明\n"
-                    )
-
-                subprocess.run(
-                    ["gh", "issue", "comment", str(args.issue), "--repo", args.repo, "--body", response],
-                    check=True,
-                    capture_output=True,
-                    text=True,
+            # 检查是否配置了PAT
+            gh_token = os.environ.get("GH_TOKEN", "")
+            if gh_token == os.environ.get("GITHUB_TOKEN", ""):
+                print(
+                    "\n[WARNING] 警告: 使用默认 GITHUB_TOKEN 可能无法跨仓库评论"
+                    "\n建议: 配置 PAT_TOKEN secret 以显示用户身份并获得完整权限"
+                    "\n详见: agents/_template/agent.yml 中的 GitHub Token 配置说明\n"
                 )
+
+            # 使用 post_comment 统一处理（auto_clean 会自动处理 @mentions）
+            if post_comment(args.issue, response, repo=args.repo):
                 print(f"[OK] 已发布到 {args.repo}#{args.issue}")
-            except subprocess.CalledProcessError as e:
-                error_msg = e.stderr if e.stderr else str(e)
-                print(f"[ERROR] 发布失败: {error_msg}")
-
-                # 判断是否为权限问题
-                if "not accessible" in error_msg.lower() or "forbidden" in error_msg.lower():
-                    print(
-                        "\n[INFO] 这可能是权限问题！"
-                        "\n解决方法："
-                        "\n1. 在你的 fork 仓库设置 PAT_TOKEN secret"
-                        "\n2. 创建 PAT: Settings -> Developer settings -> Personal access tokens"
-                        "\n3. 需要权限: repo (评论) + workflow (触发)"
-                        "\n\n配置后，你的回复会显示为真实用户名，而非 bot\n"
-                    )
-
+            else:
+                print(f"[ERROR] 发布到 {args.repo}#{args.issue} 失败")
                 # 将结果输出到文件，供workflow使用
                 output_file = os.environ.get("GITHUB_OUTPUT")
                 if output_file:
-                    with open(output_file, "a") as f:
-                        # 转义换行符
-                        escaped_response = response.replace("\n", "%0A").replace("\r", "%0D")
-                        f.write(f"agent_response={escaped_response}\n")
-                        f.write("comment_failed=true\n")
-                    print("[INFO] 结果已保存到 GITHUB_OUTPUT，workflow可以处理")
+                    try:
+                        with open(output_file, "a") as f:
+                            # 转义换行符
+                            escaped_response = response.replace("\n", "%0A").replace("\r", "%0D")
+                            f.write(f"agent_response={escaped_response}\n")
+                            f.write("comment_failed=true\n")
+                        print("[INFO] 结果已保存到 GITHUB_OUTPUT，workflow可以处理")
+                    except Exception as e:
+                        print(f"[WARNING] 保存到 GITHUB_OUTPUT 失败: {e}")
 
-                return 1
-            except Exception as e:
-                print(f"[ERROR] 发布失败: {e}")
-                return 1
 
     elif args.command == "list-agents":
         # 列出所有可用的 Agent
