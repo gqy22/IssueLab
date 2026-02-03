@@ -59,11 +59,18 @@ def load_collaboration_config() -> dict[str, Any]:
         return default_config
 
 
-def build_collaboration_guidelines(agents: dict[str, dict]) -> str:
+def build_collaboration_guidelines(
+    agents: dict[str, dict],
+    available_agents: list[dict] | None = None,
+    available_agents_placeholder: str | None = None,
+) -> str:
     """构建协作指南
 
     Args:
         agents: agents 字典 {agent_name: agent_config}
+        available_agents: 可选的“系统当前可用智能体列表”（通常来自 workflow 透传）。
+            元素期望包含 name/description 字段。
+        available_agents_placeholder: 当不希望展开列表时，用该文本替代 {available_agents}。
 
     Returns:
         协作指南文本，如果禁用或构建失败返回空字符串
@@ -79,16 +86,38 @@ def build_collaboration_guidelines(agents: dict[str, dict]) -> str:
         if not template:
             return ""
 
-        # 构建可用 agents 列表
-        agent_lines = []
-        for name, info in sorted(agents.items()):
-            description = info.get("description", "Agent")
-            agent_lines.append(f"- @{name}（{description}）")
+        # 构建可用 agents 列表（合并本地 discover_agents 与上游传入 available_agents）
+        if available_agents_placeholder is not None:
+            available_agents_text = available_agents_placeholder
+        else:
+            merged: dict[str, str] = {}
 
-        available_agents = "\n".join(agent_lines)
+            # 1) 本地 agents
+            for name, info in (agents or {}).items():
+                if not name:
+                    continue
+                description = (info or {}).get("description", "Agent")
+                merged[str(name)] = str(description)
+
+            # 2) 上游可用 agents（优先覆盖本地描述）
+            if available_agents:
+                for agent in available_agents:
+                    if not isinstance(agent, dict):
+                        continue
+                    name = (agent.get("name") or "").strip()
+                    if not name:
+                        continue
+                    desc = (agent.get("description") or "Agent").strip()
+                    merged[name] = desc
+
+            agent_lines = []
+            for name in sorted(merged.keys(), key=lambda s: s.lower()):
+                agent_lines.append(f"- @{name}（{merged[name]}）")
+
+            available_agents_text = "\n".join(agent_lines)
 
         # 替换模板变量
-        guidelines = template.format(available_agents=available_agents)
+        guidelines = template.format(available_agents=available_agents_text)
 
         logger.debug(f"构建协作指南成功，包含 {len(agents)} 个 agents")
         return guidelines

@@ -181,10 +181,10 @@ def _get_default_trigger_comment(agent: str) -> str:
         默认的触发评论
     """
     agent_map = {
-        "moderator": "@Moderator 请分诊",
-        "reviewer_a": "@ReviewerA 评审",
-        "reviewer_b": "@ReviewerB 找问题",
-        "summarizer": "@Summarizer 汇总",
-        "observer": "@Observer",
+        "moderator": "@moderator 请审核",
+        "reviewer_a": "@reviewer_a 评审",
+        "reviewer_b": "@reviewer_b 找问题",
+        "summarizer": "@summarizer 汇总",
+        "observer": "@observer",
     }
     return agent_map.get(agent, f"@{agent}")

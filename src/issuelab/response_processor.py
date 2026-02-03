@@ -8,11 +8,15 @@ Agent Response 后处理：解析 @mentions 并触发 dispatch
 
 import logging
 import os
-import re
 import subprocess
 from typing import Any, Literal, overload
 
-from issuelab.mention_policy import filter_mentions
+from issuelab.mention_policy import (
+    build_mention_section as _build_mention_section,
+    clean_mentions_in_text as _clean_mentions_in_text,
+    extract_mentions as _extract_mentions,
+    filter_mentions,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -35,19 +39,7 @@ def extract_mentions(text: str) -> list[str]:
         >>> extract_mentions("No mentions here")
         []
     """
-    if not text:
-        return []
-
-    # 正则匹配 @username（支持字母、数字、下划线、连字符）
-    pattern = r"@([a-zA-Z0-9_-]+)"
-    matches = re.findall(pattern, text)
-
-    # 过滤：排除纯数字的用户名（GitHub 用户名不能是纯数字）
-    # 例如 Pass@1、Pass@32 中的 1、32 不应该被匹配
-    matches = [m for m in matches if not m.isdigit()]
-
-    # 去重并返回
-    return list(dict.fromkeys(matches))
+    return _extract_mentions(text)
 
 
 def clean_mentions_in_text(text: str, replacement: str = "用户 {username}") -> str:
@@ -68,19 +60,7 @@ def clean_mentions_in_text(text: str, replacement: str = "用户 {username}") ->
         >>> clean_mentions_in_text("建议 @gqy20 确认", "{username}")
         '建议 gqy20 确认'
     """
-    if not text:
-        return text
-
-    pattern = r"@([a-zA-Z0-9_-]+)"
-
-    def replace_fn(match):
-        username = match.group(1)
-        # 过滤纯数字（不是有效的 GitHub 用户名）
-        if username.isdigit():
-            return match.group(0)  # 保持原样
-        return replacement.format(username=username)
-
-    return re.sub(pattern, replace_fn, text)
+    return _clean_mentions_in_text(text, replacement=replacement)
 
 
 def build_mention_section(mentions: list[str], format_type: str = "labeled") -> str:
@@ -102,19 +82,7 @@ def build_mention_section(mentions: list[str], format_type: str = "labeled") -> 
         >>> build_mention_section(['gqy20'], 'simple')
         '---\n@gqy20'
     """
-    if not mentions:
-        return ""
-
-    if format_type == "labeled":
-        return f"---\n相关人员: {' '.join(f'@{m}' for m in mentions)}"
-    elif format_type == "simple":
-        return f"---\n{' '.join(f'@{m}' for m in mentions)}"
-    elif format_type == "list":
-        items = "\n".join(f"- @{m}" for m in mentions)
-        return f"---\n协作请求:\n{items}"
-    else:
-        # 默认使用 labeled 格式
-        return f"---\n相关人员: {' '.join(f'@{m}' for m in mentions)}"
+    return _build_mention_section(mentions, format_type=format_type)
 
 
 @overload

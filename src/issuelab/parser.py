@@ -2,30 +2,13 @@
 
 import re
 
-# Agent 别名映射表
-AGENT_ALIASES = {
-    # Moderator 变体
-    "moderator": "moderator",
-    "mod": "moderator",
-    # ReviewerA 变体
-    "reviewer": "reviewer_a",
-    "reviewera": "reviewer_a",
-    "reviewer_a": "reviewer_a",
-    "reva": "reviewer_a",
-    # ReviewerB 变体
-    "reviewerb": "reviewer_b",
-    "reviewer_b": "reviewer_b",
-    "revb": "reviewer_b",
-    # Summarizer 变体
-    "summarizer": "summarizer",
-    "summary": "summarizer",
-}
+from issuelab.agents.registry import AGENT_NAMES
 
 
 def parse_agent_mentions(comment_body: str) -> list[str]:
     """从评论中解析 @mention 并映射到 Agent 名称
 
-    专用于解析和转换 Agent 别名（如 @mod -> moderator）
+    仅解析并映射 Agent 真名（不支持别名）
 
     Args:
         comment_body: 评论内容
@@ -40,8 +23,8 @@ def parse_agent_mentions(comment_body: str) -> list[str]:
     agents = []
     for m in raw_mentions:
         normalized = m.lower()
-        if normalized in AGENT_ALIASES:
-            agents.append(AGENT_ALIASES[normalized])
+        if normalized in AGENT_NAMES:
+            agents.append(AGENT_NAMES[normalized])
 
     # 去重，保持顺序
     seen = set()
@@ -66,6 +49,6 @@ def has_agent_mentions(comment_body: str) -> bool:
     return bool(re.search(r"@[a-zA-Z_]+", comment_body))
 
 
-# 向后兼容的别名（逐步废弃）
+# 向后兼容接口（逐步废弃）
 parse_mentions = parse_agent_mentions
 has_mentions = has_agent_mentions

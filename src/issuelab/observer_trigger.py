@@ -8,45 +8,13 @@ Observer 自动触发功能
 统一使用dispatch机制，无需预创建labels，简化架构。
 """
 
+from issuelab.agents.registry import BUILTIN_AGENTS, is_registered_agent
 import logging
 import os
 import subprocess
 import sys
-from pathlib import Path
-
-import yaml
 
 logger = logging.getLogger(__name__)
-
-# 内置agent列表
-BUILTIN_AGENTS = {
-    "moderator",
-    "reviewer_a",
-    "reviewer_b",
-    "summarizer",
-    "echo",
-    "observer",
-}
-
-
-def is_registered_user_agent(username: str) -> tuple[bool, dict | None]:
-    """检查用户名是否是已注册的用户 agent
-
-    Args:
-        username: 用户名
-
-    Returns:
-        (是否已注册, agent配置)
-    """
-    agent_yml = Path("agents") / username / "agent.yml"
-    if not agent_yml.exists():
-        return False, None
-    try:
-        with open(agent_yml) as f:
-            config = yaml.safe_load(f)
-        return config and config.get("enabled", True), config
-    except Exception:
-        return False, None
 
 
 def is_builtin_agent(agent_name: str) -> bool:
@@ -128,7 +96,7 @@ def trigger_user_agent(username: str, issue_number: int, issue_title: str, issue
         return False
 
     # 读取agent配置
-    is_registered, config = is_registered_user_agent(username)
+    is_registered, config = is_registered_agent(username)
     if not is_registered or not config:
         logger.error(f"[ERROR] Agent {username} not registered or disabled")
         return False
@@ -238,7 +206,7 @@ def auto_trigger_agent(agent_name: str, issue_number: int, issue_title: str, iss
     """
     if is_builtin_agent(agent_name):
         return trigger_builtin_agent(agent_name, issue_number)
-    elif is_registered_user_agent(agent_name)[0]:
+    elif is_registered_agent(agent_name)[0]:
         return trigger_user_agent(agent_name, issue_number, issue_title, issue_body)
     else:
         logger.warning(

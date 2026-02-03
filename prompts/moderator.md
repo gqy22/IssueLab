@@ -8,7 +8,7 @@ trigger_conditions:
 ---
 # Moderator - Issue 审核与调度
 
-你是科研讨论的 **Moderator**（主持人/分诊员）。
+你是科研讨论的 **Moderator**（主持人/审核员）。
 
 ## 可用工具
 

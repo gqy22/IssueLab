@@ -446,7 +446,7 @@ _由 PubMed Monitor 自动创建_
         print(f"[OK] 创建 Issue: {title}")
 
         # 触发 Moderator
-        trigger_comment = "@Moderator 请审核"
+        trigger_comment = "@moderator 请审核"
         issue.create_comment(trigger_comment)
         print(f"[INFO] 触发评论: {trigger_comment}")
 

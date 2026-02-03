@@ -16,62 +16,7 @@ from typing import Any
 
 import jwt
 import requests
-import yaml
-
-
-def load_registry(agents_dir: Path) -> dict[str, dict[str, Any]]:
-    """
-    从 agents/<user>/agent.yml 加载所有注册信息
-
-    Args:
-        agents_dir: agents 目录路径
-
-    Returns:
-        用户名 -> 注册信息的字典
-    """
-    registry = {}
-
-    if not agents_dir.exists():
-        print(f"Warning: Agents directory not found: {agents_dir}", file=sys.stderr)
-        return registry
-
-    for user_dir in agents_dir.iterdir():
-        if not user_dir.is_dir():
-            continue
-
-        agent_yml = user_dir / "agent.yml"
-        if not agent_yml.exists():
-            continue
-
-        try:
-            with open(agent_yml) as f:
-                config = yaml.safe_load(f)
-
-            if not config:
-                print(f"Warning: Empty config in {agent_yml}", file=sys.stderr)
-                continue
-
-            # 使用 owner 或 username 作为标识
-            username = config.get("owner") or config.get("username")
-            if not username:
-                print(f"Warning: {agent_yml} missing 'owner' or 'username'", file=sys.stderr)
-                continue
-
-            # 检查是否启用
-            if not config.get("enabled", True):
-                print(f"Info: {username} is disabled", file=sys.stderr)
-                continue
-
-            registry[username] = config
-
-        except yaml.YAMLError as e:
-            print(f"Error parsing {agent_yml.name}: {e}", file=sys.stderr)
-            continue
-        except Exception as e:
-            print(f"Error loading {agent_yml.name}: {e}", file=sys.stderr)
-            continue
-
-    return registry
+from issuelab.agents.registry import load_registry
 
 
 def match_triggers(mentions: list[str], registry: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:

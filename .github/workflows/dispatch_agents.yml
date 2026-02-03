@@ -14,10 +14,7 @@ permissions:
 jobs:
   dispatch:
     runs-on: ubuntu-latest
-    # 跳过 Agent 自动回复，避免反馈循环
-    if: |
-      (github.event_name == 'issues' && !startsWith(github.event.issue.body, '[Agent:')) ||
-      (github.event_name == 'issue_comment' && !startsWith(github.event.comment.body, '[Agent:'))
+    # 允许 Agent 回复中的 @mention 触发分发
 
     steps:
       - uses: actions/checkout@v4

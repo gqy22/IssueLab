@@ -4,10 +4,14 @@
 """
 
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# 统一的 @mention 匹配规则（支持字母、数字、下划线、连字符）
+MENTION_PATTERN = re.compile(r"@([a-zA-Z0-9_-]+)")
 
 
 def load_mention_policy() -> dict[str, Any]:
@@ -152,3 +156,45 @@ def check_rate_limit(username: str, issue_number: int) -> bool:
     # TODO: 实现频率限制逻辑
     # 需要持久化存储（如 Redis 或本地文件）
     return True
+
+
+def extract_mentions(text: str) -> list[str]:
+    """从文本中提取所有@mentions（去重，保留顺序）"""
+    if not text:
+        return []
+
+    matches = MENTION_PATTERN.findall(text)
+    # 过滤纯数字（GitHub 用户名不能是纯数字）
+    matches = [m for m in matches if not m.isdigit()]
+
+    # 去重并保持顺序
+    return list(dict.fromkeys(matches))
+
+
+def clean_mentions_in_text(text: str, replacement: str = "用户 {username}") -> str:
+    """清理文本中的所有 @mentions"""
+    if not text:
+        return text
+
+    def replace_fn(match: re.Match) -> str:
+        username = match.group(1)
+        if username.isdigit():
+            return match.group(0)
+        return replacement.format(username=username)
+
+    return MENTION_PATTERN.sub(replace_fn, text)
+
+
+def build_mention_section(mentions: list[str], format_type: str = "labeled") -> str:
+    """构建 @ 区域"""
+    if not mentions:
+        return ""
+
+    if format_type == "labeled":
+        return f"---\n相关人员: {' '.join(f'@{m}' for m in mentions)}"
+    if format_type == "simple":
+        return f"---\n{' '.join(f'@{m}' for m in mentions)}"
+    if format_type == "list":
+        items = "\n".join(f"- @{m}" for m in mentions)
+        return f"---\n协作请求:\n{items}"
+    return f"---\n相关人员: {' '.join(f'@{m}' for m in mentions)}"

@@ -50,31 +50,31 @@ uv run pytest tests/test_cli.py -v              # CLI 命令测试
 
 | 模块 | 文件 | 说明 |
 |------|------|------|
-| 解析器 | `src/issuelab/parser.py` | 解析 @mention 别名映射 |
+| 解析器 | `src/issuelab/parser.py` | 解析 @mention 真名 |
 | 测试 | `tests/test_parser.py` | @mention 解析测试 |
 
 ### 测试用例
 
-#### 1. 测试内置 Agent 别名解析
+#### 1. 测试内置 Agent 真名解析
 
 ```python
 # 测试文件: tests/test_parser.py
 
 def test_parse_single_mention():
     """测试解析单个 @mention"""
-    result = parse_mentions("@moderator 请分诊")
+    result = parse_mentions("@moderator 请审核")
     assert result == ["moderator"]
 
 def test_parse_multiple_mentions():
     """测试解析多个 @mention"""
-    result = parse_mentions("@Moderator 分诊，@ReviewerA 评审")
+    result = parse_mentions("@moderator 审核，@reviewer_a 评审")
     assert result == ["moderator", "reviewer_a"]
 
-def test_parse_alias_mappings():
-    """测试别名映射"""
-    assert AGENT_ALIASES["mod"] == "moderator"
-    assert AGENT_ALIASES["reva"] == "reviewer_a"
-    assert AGENT_ALIASES["revb"] == "reviewer_b"
+def test_parse_name_mappings():
+    """测试真名映射"""
+    assert AGENT_NAMES["moderator"] == "moderator"
+    assert AGENT_NAMES["reviewer_a"] == "reviewer_a"
+    assert AGENT_NAMES["reviewer_b"] == "reviewer_b"
 ```
 
 #### 2. 运行解析器测试
@@ -92,8 +92,8 @@ from issuelab.parser import parse_agent_mentions
 
 tests = [
     '@moderator 请审核',
-    '@ReviewerA 和 @ReviewerB 评审',
-    '@mod @reviewer @summary',
+    '@reviewer_a 和 @reviewer_b 评审',
+    '@moderator @reviewer_a @summarizer',
     '@MODERATOR 测试大写',
 ]
 
@@ -103,11 +103,13 @@ for t in tests:
 "
 ```
 
-### Alias 别名映射表
+### 真名触发
 
-| 别名 | 标准名称 |
-|------|---------|
-| `mod` | `moderator` |
+系统仅支持内置 Agent 真名触发，例如：
+- `@moderator`
+- `@reviewer_a`
+- `@reviewer_b`
+- `@summarizer`
 | `reviewer` / `reviewera` / `reva` | `reviewer_a` |
 | `reviewerb` / `reviewer_b` / `revb` | `reviewer_b` |
 | `summary` | `summarizer` |
@@ -433,7 +435,7 @@ uv run pytest tests/test_cli.py -v
 
 ```bash
 # 触发完整评审
-gh issue comment 1 --body "@moderator 请分诊"
+gh issue comment 1 --body "@moderator 请审核"
 
 # 或使用 /review 命令
 gh issue comment 1 --body "/review"

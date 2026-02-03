@@ -6,6 +6,9 @@
 import re
 from pathlib import Path
 
+# 统一 registry 读取
+from issuelab.agents.registry import load_registry
+
 # 提示词目录
 PROMPTS_DIR = Path(__file__).parent.parent.parent.parent / "prompts"
 AGENTS_DIR = Path(__file__).parent.parent.parent.parent / "agents"
@@ -17,7 +20,7 @@ def parse_agent_metadata(content: str) -> dict | None:
     格式：
     ---
     agent: moderator
-    description: 分诊与控场代理
+    description: 审核与控场代理
     trigger_conditions:
       - 新论文 Issue
       - 需要分配评审流程
@@ -108,28 +111,16 @@ def discover_agents() -> dict:
 
     # 扫描 agents 目录下的用户自定义 agent
     if AGENTS_DIR.exists():
-        import yaml
+        registry = load_registry(AGENTS_DIR, include_disabled=True)
 
-        for agent_dir in AGENTS_DIR.iterdir():
-            if not agent_dir.is_dir() or agent_dir.name.startswith("_"):
-                continue
-
-            agent_file = agent_dir / "agent.yml"
+        for agent_name, agent_config in registry.items():
+            agent_dir = AGENTS_DIR / agent_name
             prompt_file = agent_dir / "prompt.md"
-
-            if not agent_file.exists() or not prompt_file.exists():
+            if not prompt_file.exists():
                 continue
-
-            # 使用目录名作为 agent_id
-            agent_name = agent_dir.name
-
-            # 从 agent.yml 读取配置
-            with open(agent_file, encoding="utf-8") as f:
-                agent_config = yaml.safe_load(f)
 
             # 读取 prompt 内容（移除可能的 frontmatter）
             prompt_content = prompt_file.read_text()
-            # 移除 frontmatter（兼容旧格式）
             prompt_content = re.sub(r"^---\n.*?\n---\n", "", prompt_content, flags=re.DOTALL).strip()
 
             agents[agent_name] = {

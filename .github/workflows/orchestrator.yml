@@ -79,8 +79,7 @@ jobs:
   detect-mentions:
     if: |
       github.event_name == 'issue_comment' &&
-      contains(github.event.comment.body, '@') &&
-      !startsWith(github.event.comment.body, '[Agent:')
+      contains(github.event.comment.body, '@')
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -96,19 +95,12 @@ jobs:
         run: |
           COMMENT="$COMMENT_BODY"
 
-          # 定义内置 Agent 映射（@Mention 别名 -> agent name）
+          # 定义内置 Agent 映射（只使用真名）
           declare -A AGENT_MAP=(
             ["moderator"]="moderator"
-            ["mod"]="moderator"
             ["reviewer_a"]="reviewer_a"
-            ["reviewera"]="reviewer_a"
-            ["reviewer"]="reviewer_a"
-            ["reva"]="reviewer_a"
             ["reviewer_b"]="reviewer_b"
-            ["reviewerb"]="reviewer_b"
-            ["revb"]="reviewer_b"
             ["summarizer"]="summarizer"
-            ["summary"]="summarizer"
             ["observer"]="observer"
             ["echo"]="echo"
             ["test"]="test"

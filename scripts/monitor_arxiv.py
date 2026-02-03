@@ -292,8 +292,8 @@ _由 arXiv Monitor 自动创建_"""
         issue = repo.create_issue(title=title, body=body)
         print(f"[OK] 创建 Issue: {title[:50]}...")
 
-        # 创建评论触发 @Moderator（评论中的 @ 会触发 orchestrator.yml）
-        trigger_comment = "@Moderator 请审核"
+        # 创建评论触发 @moderator（评论中的 @ 会触发 orchestrator.yml）
+        trigger_comment = "@moderator 请审核"
         issue.create_comment(trigger_comment)
         print(f"[INFO] 触发评论: {trigger_comment}")
 

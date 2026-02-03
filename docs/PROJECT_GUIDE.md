@@ -180,8 +180,8 @@ git push origin main
 在主仓库 Issue 或评论中：
 
 ```
-@Moderator 请审核这个问题
-@ReviewerA @ReviewerB 请评审
+@moderator 请审核这个问题
+@reviewer_a @reviewer_b 请评审
 @your_username 你对这个论文怎么看？
 ```
 
@@ -201,19 +201,19 @@ git push origin main
 
 | Agent | 触发 | 角色 | 职责 |
 |-------|------|------|------|
-| **Moderator** | `@Moderator` | 审核员 | 审核、检查完整性、流程控制 |
-| **ReviewerA** | `@ReviewerA` | 正面评审 | 从可行性、贡献度角度评审 |
-| **ReviewerB** | `@ReviewerB` | 批判性评审 | 寻找漏洞、反例、潜在问题 |
-| **Summarizer** | `@Summarizer` | 总结者 | 汇总共识与分歧，输出行动项 |
+| **Moderator** | `@moderator` | 审核员 | 审核、检查完整性、流程控制 |
+| **ReviewerA** | `@reviewer_a` | 正面评审 | 从可行性、贡献度角度评审 |
+| **ReviewerB** | `@reviewer_b` | 批判性评审 | 寻找漏洞、反例、潜在问题 |
+| **Summarizer** | `@summarizer` | 总结者 | 汇总共识与分歧，输出行动项 |
 
 ### 3.3 评审流程
 
 **标准流程：**
 
 1. **提交 Issue**（自动获得 `state:triage` 标签）
-2. **审核**：`@Moderator` 或 `/triage`
+2. **审核**：`@moderator` 或 `/triage`
 3. **评审**：Moderator 建议后，管理员添加 `state:ready-for-review` 标签，自动触发双评审
-4. **总结**：评审完成后，添加 `bot:needs-summary` 标签，`@Summarizer` 总结
+4. **总结**：评审完成后，添加 `bot:needs-summary` 标签，`@summarizer` 总结
 
 **快捷流程：**
 
@@ -451,10 +451,10 @@ Concerns:
 
 ```
 # ❌ 不够清晰
-@ReviewerA 这个方法怎么样？
+@reviewer_a 这个方法怎么样？
 
 # ✅ 提供上下文
-@ReviewerA 我在图像分类任务上使用了 ResNet50，
+@reviewer_a 我在图像分类任务上使用了 ResNet50，
 但在小样本数据集（每类 50 张）上过拟合严重。
 请评估使用数据增强 + Dropout 的可行性。
 ```
@@ -463,10 +463,10 @@ Concerns:
 
 ```
 # ❌ 过于宽泛
-@ReviewerB 这个设计有什么问题？
+@reviewer_b 这个设计有什么问题？
 
 # ✅ 具体问题
-@ReviewerB 请从以下角度分析潜在风险：
+@reviewer_b 请从以下角度分析潜在风险：
 1. 数据分布偏移的影响
 2. 超参数敏感性
 3. 计算资源需求
@@ -475,8 +475,8 @@ Concerns:
 **3. 利用多个 Agent 的不同视角**
 
 ```
-@ReviewerA 请从可行性角度评估这个方案
-@ReviewerB 请寻找潜在的漏洞和反例
+@reviewer_a 请从可行性角度评估这个方案
+@reviewer_b 请寻找潜在的漏洞和反例
 @your_expert_friend 你在相关领域有经验，能给点建议吗？
 ```
 
@@ -485,7 +485,7 @@ Concerns:
 第一轮：获取初步反馈
 → 第二轮：针对问题补充信息
 → 第三轮：讨论具体解决方案
-→ 总结：`@Summarizer` 生成行动计划
+→ 总结：`@summarizer` 生成行动计划
 
 ### 5.3 常见问题解答
 

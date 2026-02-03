@@ -8,6 +8,7 @@ import anyio
 from issuelab.agents.discovery import discover_agents, get_agent_matrix_markdown
 from issuelab.agents.executor import run_single_agent
 from issuelab.agents.parsers import parse_observer_response, parse_papers_recommendation
+from issuelab.collaboration import build_collaboration_guidelines
 from issuelab.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -74,7 +75,19 @@ __COMMENTS__"""
     prompt = prompt.replace("__ISSUE_TITLE__", issue_title)
     prompt = prompt.replace("__ISSUE_BODY__", issue_body or "无内容")
     prompt = prompt.replace("__COMMENTS__", comments or "无评论")
-    prompt = prompt.replace("__AGENT_MATRIX__", get_agent_matrix_markdown())
+
+    # 注入协作指南：Observer 不在 prompt 文件里维护专家列表，而是统一注入。
+    # 这里用动态生成的 Agent Matrix 表格替代 {available_agents}，提供触发条件信息。
+    collaboration_guidelines = build_collaboration_guidelines(
+        agents,
+        available_agents_placeholder=get_agent_matrix_markdown(),
+    )
+    if collaboration_guidelines and "## 协作指南" not in prompt:
+        marker = "\n## 当前任务\n"
+        if marker in prompt:
+            prompt = prompt.replace(marker, f"\n\n{collaboration_guidelines}{marker}", 1)
+        else:
+            prompt = f"{prompt}\n\n{collaboration_guidelines}"
 
     logger.info(f"[Observer] 开始分析 Issue #{issue_number}")
     logger.debug(f"[Observer] Title: {issue_title[:50]}...")
@@ -206,6 +219,11 @@ async def run_observer_for_papers(papers: list[dict]) -> list[dict]:
 
     # 替换占位符
     prompt = prompt.replace("__PAPERS_CONTEXT__", papers_context)
+
+    # 注入协作指南（对 arxiv_observer 也生效）
+    collaboration_guidelines = build_collaboration_guidelines(agents)
+    if collaboration_guidelines and "## 协作指南" not in prompt:
+        prompt = f"{prompt}\n\n{collaboration_guidelines}"
 
     logger.info(f"[arxiv_observer] 开始分析 {len(papers)} 篇候选论文")
 

@@ -3,7 +3,7 @@
 
 用于跨仓库触发：提取 GitHub 用户名用于分发到用户仓库
 与 issuelab.parser 的区别：
-- parser.py: 解析 Agent 别名（@mod -> moderator）
+- parser.py: 解析 Agent 真名（不支持别名）
 - mentions.py: 解析 GitHub 用户名（@alice, @bob）
 """
 

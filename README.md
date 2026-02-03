@@ -35,7 +35,7 @@ flowchart LR
     B --> C
     C --> D
 
-    D -->|"内置 Agent<br/>@Moderator @ReviewerA"| E
+    D -->|"内置 Agent<br/>@moderator @reviewer_a"| E
     D -->|"用户 Agent<br/>@username"| F
 
     E --> J
@@ -54,7 +54,7 @@ flowchart LR
 
 | 方式 | 语法 | 执行位置 |
 |------|------|---------|
-| @Mention | `@Moderator`, `@ReviewerA` | 主仓库直接执行 |
+| @Mention | `@moderator`, `@reviewer_a` | 主仓库直接执行 |
 | @Mention | `@username` (用户) | 跨仓库分发到 fork |
 | /Command | `/review` | 主仓库执行完整流程 |
 | Label | `state:ready-for-review` | Observer 自动触发 |
@@ -69,8 +69,8 @@ flowchart LR
 
 | 类型 | 示例 |
 |------|------|
-| 论文讨论 | "@ReviewerA @ReviewerB 这篇论文的方法有什么漏洞？" |
-| 实验提案 | "@Moderator 请评估这个实验提案是否值得做" |
+| 论文讨论 | "@reviewer_a @reviewer_b 这篇论文的方法有什么漏洞？" |
+| 实验提案 | "@moderator 请评估这个实验提案是否值得做" |
 | 观点辩论 | "@正方 @反方 请就这个方案展开辩论" |
 | 技术问答 | "@Expert1 @Expert2 这个问题你们怎么看？ |
 
@@ -112,10 +112,10 @@ flowchart LR
 uv sync
 
 # 在 GitHub Issue 中 @mention 触发
-@Moderator 审核
-@ReviewerA 评审可行性
-@ReviewerB 找问题
-@Summarizer 汇总
+@moderator 审核
+@reviewer_a 评审可行性
+@reviewer_b 找问题
+@summarizer 汇总
 
 # 或使用命令
 /review      # 完整流程：审核→正面评审→批判性评审→总结

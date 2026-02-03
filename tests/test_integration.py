@@ -7,7 +7,7 @@ from issuelab.parser import parse_agent_mentions
 def test_parser_agent_integration():
     """测试 parser 和 agents 模块的集成"""
     # 解析 @mention
-    comment = "@Moderator please review @ReviewerA @revb"
+    comment = "@moderator please review @reviewer_a @reviewer_b"
     agents = parse_agent_mentions(comment)
 
     # 验证所有解析的 agent 都存在
@@ -16,28 +16,28 @@ def test_parser_agent_integration():
         assert agent in discovered, f"Agent {agent} not found in discovered agents"
 
 
-def test_aliases_consistency():
-    """测试别名在不同模块中的一致性"""
-    from issuelab.agents import AGENT_ALIASES as AGENTS_ALIASES
-    from issuelab.parser import AGENT_ALIASES as PARSER_ALIASES
+def test_name_mapping_consistency():
+    """测试名称映射在不同模块中的一致性"""
+    from issuelab.agents import AGENT_NAMES as AGENTS_NAMES
+    from issuelab.parser import AGENT_NAMES as PARSER_NAMES
 
     # 两个模块应该引用相同的对象
-    assert AGENTS_ALIASES is PARSER_ALIASES
+    assert AGENTS_NAMES is PARSER_NAMES
 
 
 def test_end_to_end_agent_loading():
-    """端到端测试：从别名到加载 prompt"""
-    # 使用别名
-    alias = "mod"
+    """端到端测试：从名称到加载 prompt"""
+    # 使用真名
+    name = "moderator"
 
     # 1. 标准化
-    normalized = normalize_agent_name(alias)
+    normalized = normalize_agent_name(name)
     assert normalized == "moderator"
 
     # 2. 加载 prompt
     prompt = load_prompt(normalized)
     assert len(prompt) > 0
-    assert "Moderator" in prompt or "分诊" in prompt
+    assert "Moderator" in prompt or "审核" in prompt
 
 
 def test_all_prompts_loadable():

@@ -48,7 +48,7 @@ uv run python -m issuelab list-agents
 | `src/issuelab/agents/options.py` | SDK options building - `create_agent_options()` |
 | `src/issuelab/agents/parsers.py` | Response parsing utilities |
 | `src/issuelab/config.py` | Environment variable management |
-| `src/issuelab/parser.py` | @mention parsing with alias mapping |
+| `src/issuelab/parser.py` | @mention parsing with canonical names |
 | `src/issuelab/agents/__init__.py` | Agent discovery from `prompts/` and `agents/` |
 | `src/issuelab/cli/dispatch.py` | Cross-repository event dispatch (Plan B) |
 | `src/issuelab/tools/github.py` | GitHub API wrappers using `gh` CLI |
@@ -77,12 +77,10 @@ trigger_conditions:
 
 **User Custom Agents:** Fork the repo, add `agents/<username>/agent.yml` and `agents/<username>/prompt.md`.
 
-**Aliases:** `mod`, `reviewer`/`reviewera`, `reviewerb`/`revb`, `summary`
-
 ### Trigger Mechanisms
 
 1. **@Mention** (orchestrator.yml):
-   - Built-in: `@Moderator`, `@ReviewerA`, `@ReviewerB`, `@Summarizer`, `@Observer`
+   - Built-in: `@moderator`, `@reviewer_a`, `@reviewer_b`, `@summarizer`, `@observer`
    - User agents: `@username` dispatches to user's fork
 
 2. **/Command**:

@@ -239,7 +239,7 @@ enabled: false
         matched = match_triggers(["charlie"], registry)
         assert len(matched) == 0
 
-        # Test alias match
+        # Test trigger match
         matched = match_triggers(["bob-cv"], registry)
         assert len(matched) == 1
         assert matched[0]["owner"] == "bob"

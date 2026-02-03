@@ -1,7 +1,7 @@
 """测试代理模块"""
 
 from issuelab.agents import (
-    AGENT_ALIASES,
+    AGENT_NAMES,
     discover_agents,
     get_available_agents,
     load_prompt,
@@ -10,24 +10,16 @@ from issuelab.agents import (
 )
 
 
-def test_agent_aliases_mapping():
-    """代理别名映射表必须正确"""
-    # Moderator 别名
-    assert AGENT_ALIASES["moderator"] == "moderator"
-    assert AGENT_ALIASES["mod"] == "moderator"
-
-    # ReviewerA 别名
-    assert AGENT_ALIASES["reviewer"] == "reviewer_a"
-    assert AGENT_ALIASES["reviewera"] == "reviewer_a"
-    assert AGENT_ALIASES["reva"] == "reviewer_a"
-
-    # ReviewerB 别名
-    assert AGENT_ALIASES["reviewerb"] == "reviewer_b"
-    assert AGENT_ALIASES["revb"] == "reviewer_b"
-
-    # Summarizer 别名
-    assert AGENT_ALIASES["summarizer"] == "summarizer"
-    assert AGENT_ALIASES["summary"] == "summarizer"
+def test_agent_name_mapping():
+    """代理名称映射表仅包含真名"""
+    assert AGENT_NAMES["moderator"] == "moderator"
+    assert AGENT_NAMES["reviewer_a"] == "reviewer_a"
+    assert AGENT_NAMES["reviewer_b"] == "reviewer_b"
+    assert AGENT_NAMES["summarizer"] == "summarizer"
+    assert "mod" not in AGENT_NAMES
+    assert "reviewer" not in AGENT_NAMES
+    assert "revb" not in AGENT_NAMES
+    assert "summary" not in AGENT_NAMES
 
 
 def test_discover_agents():
@@ -103,13 +95,13 @@ def test_load_prompt_unknown_agent():
 
 def test_normalize_agent_name():
     """normalize_agent_name 应该返回标准化名称"""
-    assert normalize_agent_name("mod") == "moderator"
     assert normalize_agent_name("MODERATOR") == "moderator"
-    assert normalize_agent_name("reviewer") == "reviewer_a"
-    assert normalize_agent_name("revb") == "reviewer_b"
-    assert normalize_agent_name("summary") == "summarizer"
-    # 测试不存在的别名
+    assert normalize_agent_name("reviewer_a") == "reviewer_a"
+    assert normalize_agent_name("reviewer_b") == "reviewer_b"
+    assert normalize_agent_name("summarizer") == "summarizer"
+    # 测试不存在的名称
     assert normalize_agent_name("unknown") == "unknown"
+    assert normalize_agent_name("mod") == "mod"
 
 
 def test_get_available_agents():

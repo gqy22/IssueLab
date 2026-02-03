@@ -5,25 +5,12 @@
 """
 
 # 直接从子模块导入核心功能
-# 从 parser 导入别名配置（单一来源）
 from issuelab.agents.discovery import (
     discover_agents,
     load_prompt,
     parse_agent_metadata,
 )
-from issuelab.parser import AGENT_ALIASES
-
-
-def normalize_agent_name(name: str) -> str:
-    """标准化代理名称（支持别名）
-
-    Args:
-        name: 原始名称（可能包含别名）
-
-    Returns:
-        标准化的代理名称
-    """
-    return AGENT_ALIASES.get(name.lower(), name)
+from issuelab.agents.registry import AGENT_NAMES, BUILTIN_AGENTS, normalize_agent_name
 
 
 def get_available_agents() -> list[str]:
@@ -42,5 +29,6 @@ __all__ = [
     "parse_agent_metadata",
     "normalize_agent_name",
     "get_available_agents",
-    "AGENT_ALIASES",
+    "AGENT_NAMES",
+    "BUILTIN_AGENTS",
 ]

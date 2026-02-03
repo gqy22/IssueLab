@@ -194,30 +194,21 @@ async def run_agents_parallel(
             }
         }
     """
-    from issuelab.agents.discovery import load_prompt
+    from issuelab.agents.discovery import discover_agents, load_prompt
+    from issuelab.collaboration import build_collaboration_guidelines
 
     # 构建任务上下文（Issue 信息）
     task_context = context
     if comment_count > 0:
         task_context += f"\n\n**重要提示**: 本 Issue 已有 {comment_count} 条历史评论。请仔细阅读并分析这些评论。"
 
-    # 添加可用智能体上下文（用于协作）
-    agents_context = ""
-    if available_agents:
-        agents_context = "\n\n## 系统中的其他智能体\n\n"
-        agents_context += "当你需要协作时，可以@以下智能体（**每次最多@2个**）：\n\n"
-
-        for agent in available_agents:
-            name = agent.get("name", "")
-            desc = agent.get("description", "")
-            agents_context += f"- **{name}** - {desc}\n"
-
-        agents_context += "\n**协作规则：**\n"
-        agents_context += "- 每次回复中最多@2个智能体\n"
-        agents_context += "- 仅在确实需要协作时才@，不要无脑@\n"
-        agents_context += "- @mention 只能使用上方列出的智能体名称，不能使用其他用户名\n"
-
-        task_context += agents_context
+    # 协作指南：统一在执行器注入，覆盖所有入口（CLI/personal-reply/observer_trigger 等）
+    # 为避免重复注入：如果上游 context 已包含协作指南标题，则跳过
+    if "## 协作指南" not in task_context:
+        agents_dict = discover_agents()
+        collaboration_guidelines = build_collaboration_guidelines(agents_dict, available_agents=available_agents)
+        if collaboration_guidelines:
+            task_context += f"\n\n{collaboration_guidelines}"
 
     results: dict[str, dict] = {}
     total_cost = 0.0
