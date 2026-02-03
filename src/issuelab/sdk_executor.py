@@ -541,13 +541,23 @@ async def run_observer_batch(issue_data_list: list[dict]) -> list[dict]:
 def parse_observer_response(response: str, issue_number: int) -> dict:
     """解析 Observer Agent 的响应
 
+    支持 YAML 格式（使用 PyYAML）和兼容的行扫描格式。
+
     Args:
         response: Agent 响应文本
         issue_number: Issue 编号
 
     Returns:
-        解析后的决策结果
+        解析后的决策结果 {
+            "should_trigger": bool,
+            "agent": str,
+            "comment": str,
+            "reason": str,
+            "analysis": str,
+        }
     """
+    import yaml
+
     result = {
         "should_trigger": False,
         "agent": "",
@@ -556,7 +566,88 @@ def parse_observer_response(response: str, issue_number: int) -> dict:
         "analysis": "",
     }
 
-    # 简单的解析逻辑
+    # 方法1: 尝试 YAML 解析
+    yaml_data = _try_parse_yaml(response)
+    if yaml_data is not None:
+        result["should_trigger"] = yaml_data.get("should_trigger", False)
+        result["agent"] = yaml_data.get("agent", "") or yaml_data.get("trigger_agent", "")
+        result["comment"] = yaml_data.get("comment", "") or yaml_data.get("trigger_comment", "")
+        result["reason"] = yaml_data.get("reason", "") or yaml_data.get("skip_reason", "")
+        result["analysis"] = yaml_data.get("analysis", "")
+
+        # 如果是 skip 模式，提前返回
+        if not result["should_trigger"] and result["reason"]:
+            return result
+
+        # 如果没有解析到触发评论，使用默认格式
+        if result["should_trigger"] and result["agent"] and not result["comment"]:
+            result["comment"] = _get_default_trigger_comment(result["agent"])
+
+        return result
+
+    # 方法2: 回退到行扫描（兼容旧格式）
+    return _parse_observer_response_lines(response, result, issue_number)
+
+
+def _try_parse_yaml(response: str) -> dict | None:
+    """尝试解析 YAML 格式的响应
+
+    Args:
+        response: Agent 响应文本
+
+    Returns:
+        解析后的字典，失败返回 None
+    """
+    import yaml
+
+    # 清理响应文本
+    text = response.strip()
+
+    # 检查是否包含 YAML 代码块标记
+    if "```yaml" in text:
+        # 提取 ```yaml 和 ``` 之间的内容
+        start = text.find("```yaml")
+        if start == -1:
+            start = text.find("```")
+        end = text.rfind("```")
+        if start != -1 and end != -1 and end > start:
+            # 找到代码块内容（跳过 ```yaml 行和 ``` 行）
+            lines = text[start:end].split("\n")
+            if len(lines) >= 2:
+                yaml_content = "\n".join(lines[1:])
+                try:
+                    return yaml.safe_load(yaml_content)
+                except yaml.YAMLError:
+                    pass
+    elif text.startswith("---"):
+        # 可能直接是 YAML 文档
+        try:
+            return yaml.safe_load(text)
+        except yaml.YAMLError:
+            pass
+
+    # 检查是否是简单的键值对格式（每行一个）
+    lines = text.split("\n")
+    yaml_like = True
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if ":" not in line:
+            yaml_like = False
+            break
+
+    if yaml_like:
+        try:
+            return yaml.safe_load(text)
+        except yaml.YAMLError:
+            pass
+
+    return None
+
+
+def _parse_observer_response_lines(response: str, result: dict, issue_number: int) -> dict:
+    """回退解析：简单的行扫描（兼容旧格式）"""
     lines = response.split("\n")
 
     # 查找 action/should_trigger
@@ -574,39 +665,45 @@ def parse_observer_response(response: str, issue_number: int) -> dict:
             result["agent"] = line.split(":", 1)[1].strip().lower()
             break
 
-    # 查找 comment
-    in_comment = False
-    comment_lines = []
+    # 查找 comment（处理简单的单行格式）
     for line in lines:
-        if "comment:" in line.lower() or "trigger_comment:" in line.lower():
-            in_comment = True
-            continue
-        if in_comment and line.startswith("---"):
+        if line.lower().startswith("comment:") or line.lower().startswith("trigger_comment:"):
+            result["comment"] = line.split(":", 1)[1].strip()
             break
-        if in_comment:
-            comment_lines.append(line)
-    result["comment"] = "\n".join(comment_lines).strip()
 
     # 查找 reason
     for line in lines:
-        if "reason:" in line.lower():
+        if line.lower().startswith("reason:") or line.lower().startswith("skip_reason:"):
             result["reason"] = line.split(":", 1)[1].strip()
             break
 
     # 查找 analysis
     for line in lines:
-        if "analysis:" in line.lower():
+        if line.lower().startswith("analysis:"):
             result["analysis"] = line.split(":", 1)[1].strip()
             break
 
     # 如果没有解析到触发评论，使用默认格式
     if result["should_trigger"] and result["agent"] and not result["comment"]:
-        agent_map = {
-            "moderator": "@Moderator 请分诊",
-            "reviewer_a": "@ReviewerA 评审",
-            "reviewer_b": "@ReviewerB 找问题",
-            "summarizer": "@Summarizer 汇总",
-        }
-        result["comment"] = agent_map.get(result["agent"], f"@{result['agent']}")
+        result["comment"] = _get_default_trigger_comment(result["agent"])
 
     return result
+
+
+def _get_default_trigger_comment(agent: str) -> str:
+    """获取默认的触发评论
+
+    Args:
+        agent: Agent 名称
+
+    Returns:
+        默认的触发评论
+    """
+    agent_map = {
+        "moderator": "@Moderator 请分诊",
+        "reviewer_a": "@ReviewerA 评审",
+        "reviewer_b": "@ReviewerB 找问题",
+        "summarizer": "@Summarizer 汇总",
+        "observer": "@Observer",
+    }
+    return agent_map.get(agent, f"@{agent}")
