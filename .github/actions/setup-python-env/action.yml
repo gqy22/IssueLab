@@ -1,7 +1,7 @@
 name: Setup Python Environment
 
 description: |
-  Checkout repository, install uv, Python 3.12, and dependencies.
+  Checkout repository, install uv, Python 3.13, and dependencies.
   This is a reusable action for setting up Python environment with uv.
 
 inputs:
@@ -31,8 +31,8 @@ runs:
         enable-cache: ${{ inputs.enable-cache }}
         cache-dependency-glob: ${{ inputs.cache-dependency-glob }}
 
-    - name: Set up Python 3.12
-      run: uv python install 3.12
+    - name: Set up Python 3.13
+      run: uv python install 3.13
       shell: bash
 
     - name: Install dependencies
