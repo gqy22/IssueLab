@@ -126,6 +126,59 @@ class PubMedClient:
             logger.error(f"PubMed summary failed: {e}")
             return {}
 
+    def efetch(self, id_list: list[str]) -> dict:
+        """使用 efetch 获取 DOI 等完整信息
+
+        Args:
+            id_list: PMID 列表
+
+        Returns:
+            PMID -> ArticleIdList 的字典
+        """
+        if not id_list:
+            return {}
+
+        self._rate_limit()
+
+        ids_str = ",".join(id_list)
+        params = {
+            "db": "pubmed",
+            "id": ids_str,
+            "retmode": "xml",
+            "rettype": "abstract",
+            "email": self.email,
+        }
+
+        url = f"{self.BASE_URL}/efetch.fcgi?{urllib.parse.urlencode(params)}"
+
+        try:
+            import xml.etree.ElementTree as ET
+
+            with urllib.request.urlopen(url) as response:
+                xml_data = response.read().decode()
+                root = ET.fromstring(xml_data)
+
+                result = {}
+                for article in root.findall(".//PubmedArticle"):
+                    pmid_elem = article.find(".//PMID")
+                    if pmid_elem is None:
+                        continue
+                    pmid = pmid_elem.text
+
+                    # 查找 DOI
+                    doi = ""
+                    for article_id in article.findall(".//ArticleId"):
+                        id_type = article_id.get("IdType", "")
+                        if id_type == "doi":
+                            doi = article_id.text.strip()
+                            break
+
+                    result[pmid] = {"doi": doi}
+                return result
+        except Exception as e:
+            logger.error(f"PubMed efetch failed: {e}")
+            return {}
+
 
 def parse_pubmed_date(date_str: str) -> str:
     """解析 PubMed 日期格式"""
@@ -219,6 +272,9 @@ def fetch_papers(query: str, email: str, days: int = 7, max_papers: int = 20) ->
     # Step 2: esummary 获取详情
     details = client.summary(pmids)
 
+    # Step 3: efetch 获取 DOI
+    efetch_data = client.efetch(pmids)
+
     # 解析文献
     papers = []
     for uid in pmids:
@@ -234,6 +290,9 @@ def fetch_papers(query: str, email: str, days: int = 7, max_papers: int = 20) ->
         # 获取摘要 (efetch 需要另外调用，这里先用 keywords)
         keywords = doc.get("keywords", [])
 
+        # 获取 DOI (优先使用 efetch 结果)
+        doi = efetch_data.get(uid, {}).get("doi", "") or doc.get("doi", "")
+
         papers.append(
             {
                 "pmid": uid,
@@ -243,7 +302,7 @@ def fetch_papers(query: str, email: str, days: int = 7, max_papers: int = 20) ->
                 "epubdate": parse_pubmed_date(doc.get("epubdate", "")),
                 "entrezdate": parse_pubmed_date(doc.get("entrezdate", "") or doc.get("sortdate", "")),
                 "authors": authors,
-                "doi": doc.get("doi", ""),
+                "doi": doi,
                 "url": f"https://pubmed.ncbi.nlm.nih.gov/{uid}/",
                 "keywords": keywords if isinstance(keywords, list) else [],
                 "has_abstract": doc.get("hasabstract", 0),
