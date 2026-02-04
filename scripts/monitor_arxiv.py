@@ -23,7 +23,7 @@ import os
 import re
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 import feedparser
@@ -194,9 +194,9 @@ def analyze_with_observer(papers: list[dict], token: str) -> list[dict]:
     logger.info(f"[Observer Agent] 开始智能分析 {len(papers)} 篇论文")
     logger.info(f"{'=' * 60}")
 
-    # 如果论文不足 2 篇，无法推荐
-    if len(papers) < 2:
-        logger.warning(f"论文数量不足 {2} 篇，无法进行智能推荐")
+    # 如果论文不足 1 篇，无法推荐
+    if len(papers) < 1:
+        logger.warning("论文数量不足 1 篇，无法进行智能推荐")
         return []
 
     # 调用真正的 Observer agent
@@ -321,7 +321,7 @@ def main(argv: list[str] | None = None) -> int:
     logger.setLevel(log_level)
 
     # 默认 7 天前
-    last_scan = args.last_scan or (datetime.now() - datetime.timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    last_scan = args.last_scan or (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     categories = [c.strip() for c in args.categories.split(",") if c.strip()]
 
@@ -362,8 +362,8 @@ def main(argv: list[str] | None = None) -> int:
         if len(recommended) == 0:
             if len(new_papers) == 0:
                 logger.info("所有论文已存在，无需推荐")
-            elif len(new_papers) < 2:
-                logger.info("新论文数量不足 2 篇，无法智能推荐")
+            elif len(new_papers) < 1:
+                logger.info("新论文数量不足 1 篇，无法智能推荐")
             else:
                 logger.info("智能分析未返回有效结果")
             return 0

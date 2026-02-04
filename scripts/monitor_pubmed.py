@@ -172,7 +172,7 @@ def fetch_papers(query: str, email: str, days: int = 7, max_papers: int = 20) ->
     """
     # 计算日期范围
     end_date = datetime.now().strftime("%Y/%m/%d")
-    start_date = (datetime.now() - datetime.timedelta(days=days)).strftime("%Y/%m/%d")
+    start_date = (datetime.now() - timedelta(days=days)).strftime("%Y/%m/%d")
 
     logger.info(f"检索词: {query}")
     logger.info(f"时间范围: {start_date} - {end_date}")
