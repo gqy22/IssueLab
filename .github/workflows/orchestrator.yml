@@ -21,7 +21,8 @@ jobs:
   auto-trigger-review:
     if: github.event_name == 'issues' &&
         github.event.action == 'labeled' &&
-        github.event.label.name == 'state:ready-for-review'
+        github.event.label.name == 'state:ready-for-review' &&
+        github.event.issue.state == 'open'
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -79,6 +80,7 @@ jobs:
   detect-mentions:
     if: |
       github.event_name == 'issue_comment' &&
+      github.event.issue.state == 'open' &&
       contains(github.event.comment.body, '@')
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -392,6 +394,7 @@ jobs:
   # ========== /command 触发（/review, /quiet, /close, /confirm-close） ==========
   process-command:
     if: github.event_name == 'issue_comment' &&
+        github.event.issue.state == 'open' &&
         (contains(github.event.comment.body, '/review') ||
          contains(github.event.comment.body, '/quiet') ||
          contains(github.event.comment.body, '/close') ||
