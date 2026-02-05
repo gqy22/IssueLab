@@ -286,6 +286,12 @@ def normalize_comment_body(body: str) -> str:
         return body
     agent_name = _extract_agent_name(body)
     normalized, _warnings = _normalize_agent_output(body, agent_name)
+    rules = _load_format_rules()
+    yaml_marker = rules["sections"]["structured"]
+    if yaml_marker in normalized:
+        head, _sep, _tail = normalized.partition(yaml_marker)
+        normalized = head.rstrip() + "\n"
+    normalized = re.sub(r"\n{3,}", "\n\n", normalized).strip() + "\n"
     return normalized
 
 
