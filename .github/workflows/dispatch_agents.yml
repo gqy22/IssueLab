@@ -95,9 +95,10 @@ jobs:
                           triggers = config.get("triggers", [])
                           description = config.get("description", "")
 
-                          if username and triggers:
+                          if username:
+                              trigger_name = triggers[0] if triggers else f"@{username}"
                               agents_list.append({
-                                  "name": triggers[0] if triggers else f"@{username}",
+                                  "name": trigger_name,
                                   "description": description or f"{username} agent"
                               })
                   except Exception as e:
@@ -138,6 +139,8 @@ jobs:
           # 将多行内容写入临时文件，避免命令行参数解析问题
           ISSUE_BODY_FILE=$(mktemp)
           COMMENT_BODY_FILE=$(mktemp)
+          export ISSUE_BODY_FILE
+          export COMMENT_BODY_FILE
           python -c "import json, os; from pathlib import Path; issue=json.loads(os.environ.get('ISSUE_BODY_JSON','\"\"')); comment=json.loads(os.environ.get('COMMENT_BODY_JSON','\"\"')); Path(os.environ['ISSUE_BODY_FILE']).write_text(issue or '', encoding='utf-8'); Path(os.environ['COMMENT_BODY_FILE']).write_text(comment or '', encoding='utf-8')"
 
           python -m issuelab.cli.dispatch \
