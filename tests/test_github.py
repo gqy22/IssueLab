@@ -1,5 +1,6 @@
 """测试 GitHub 工具"""
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from issuelab.tools.github import get_issue_info, post_comment, update_label
@@ -30,6 +31,35 @@ def test_post_comment():
         # 新的实现返回 bool
         assert result is True
         mock_run.assert_called_once()
+
+
+def test_post_comment_limits_mentions(monkeypatch):
+    """相关人员区域最多输出 2 个，按出现次数排序"""
+    body = (
+        "相关人员: @arxiv_observer @gqy22 @observer @summarizer @moderator "
+        "另外 @gqy22 再次被提到，@observer 也再次出现。"
+    )
+
+    captured = {}
+
+    def fake_run(cmd, capture_output, text, env):
+        captured["cmd"] = cmd
+        return MagicMock(returncode=0)
+
+    monkeypatch.setattr("issuelab.tools.github.subprocess.run", fake_run)
+    monkeypatch.setattr("issuelab.tools.github.os.unlink", lambda _path: None)
+    monkeypatch.setattr("issuelab.mention_policy.filter_mentions", lambda mentions, policy=None: (mentions, []))
+
+    result = post_comment(1, body)
+    assert result is True
+
+    cmd = captured.get("cmd", [])
+    assert "--body-file" in cmd
+    body_path = cmd[cmd.index("--body-file") + 1]
+    content = Path(body_path).read_text(encoding="utf-8")
+
+    last_line = content.strip().splitlines()[-1]
+    assert last_line == "相关人员: @gqy22 @observer"
 
 
 def test_update_label():

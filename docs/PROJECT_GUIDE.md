@@ -106,6 +106,8 @@ mkdir -p agents/YOUR_USERNAME
 # 复制模板
 cp agents/_template/personal_agent.yml agents/YOUR_USERNAME/agent.yml
 cp agents/_template/prompt.md agents/YOUR_USERNAME/prompt.md
+# 可选：MCP 配置
+cp agents/_template/.mcp.json agents/YOUR_USERNAME/.mcp.json
 ```
 
 编辑 `agents/YOUR_USERNAME/agent.yml`：
@@ -133,6 +135,8 @@ author:
 
 编辑 `agents/YOUR_USERNAME/prompt.md` 定义 agent 的行为风格。
 
+如需使用 MCP 工具，编辑 `agents/YOUR_USERNAME/.mcp.json`。
+
 ### 2.5 注册到主仓库
 
 提交 PR 添加智能体文件夹到主仓库的 `agents/`：
@@ -144,6 +148,8 @@ mkdir -p agents/YOUR_USERNAME
 # 复制模板
 cp agents/_template/agent.yml agents/YOUR_USERNAME/agent.yml
 cp agents/_template/prompt.md agents/YOUR_USERNAME/prompt.md
+# 可选：MCP 配置
+cp agents/_template/.mcp.json agents/YOUR_USERNAME/.mcp.json
 
 # 修改 agent.yml 中的配置
 # owner: YOUR_USERNAME
@@ -168,6 +174,41 @@ git push origin main
 4. 确认安装
 
 完成后，当主仓库有人 @your_username 时，会自动触发你 fork 仓库的 agent。
+
+### 2.7 MCP 配置（可选）
+
+IssueLab 支持在**项目根目录**与**单个 agent 目录**中配置 MCP：
+
+- 全局配置：`./.mcp.json`
+- Agent 配置：`./agents/<your_github_id>/.mcp.json`
+
+**合并规则：**
+- 先加载根目录 `.mcp.json`
+- 再加载 `agents/<name>/.mcp.json` 覆盖同名 server（可追加新 server）
+
+**模板文件：**
+- 参考 `agents/_template/.mcp.json`
+
+**提示词动态注入：**
+- 若在你的 `prompt.md` 中包含 `{mcp_servers}` 占位符，系统会自动注入当前已加载的 MCP 服务器列表。
+- 未配置 MCP 时，该占位符会显示“未配置 MCP 工具”，避免误用。
+
+**示例：**
+```
+agents/your-id/.mcp.json
+```
+```json
+{
+  "mcpServers": {
+    "article-mcp": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["article-mcp==0.1.8", "server"],
+      "env": {}
+    }
+  }
+}
+```
 
 ---
 

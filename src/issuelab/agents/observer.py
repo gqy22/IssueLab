@@ -180,7 +180,43 @@ def build_papers_for_observer(papers: list[dict]) -> str:
     return "\n".join(lines)
 
 
-async def run_observer_for_papers(papers: list[dict]) -> list[dict]:
+def build_pubmed_papers_for_observer(papers: list[dict], query: str) -> str:
+    """构建供 PubMed Observer 分析的文献上下文
+
+    Args:
+        papers: 文献列表
+        query: 检索词
+
+    Returns:
+        格式化的文献上下文字符串
+    """
+    lines = [
+        "## PubMed 文献候选\n",
+        f"**检索词**: {query}\n",
+        f"**候选数量**: {len(papers)} 篇\n",
+        "---\n",
+    ]
+
+    for i, paper in enumerate(papers):
+        lines.append(f"### 文献 {i}")
+        lines.append(f"**PMID**: [{paper.get('pmid', '')}]({paper.get('url', '')})")
+        lines.append(f"**标题**: {paper.get('title', '')}")
+        lines.append(f"**期刊**: {paper.get('journal', '')}")
+        lines.append(f"**发表日期**: {paper.get('pubdate', '')}")
+        if paper.get("epubdate"):
+            lines.append(f"**在线发表**: {paper.get('epubdate', '')}")
+        if paper.get("entrezdate"):
+            lines.append(f"**入库日期**: {paper.get('entrezdate', '')}")
+        lines.append(f"**作者**: {paper.get('authors', '')}")
+        keywords = paper.get("keywords", [])
+        if keywords:
+            lines.append(f"**关键词**: {', '.join(keywords[:5])}")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+async def run_observer_for_papers(papers: list[dict], return_result: bool = False) -> list[dict] | tuple[list[dict], dict]:
     """运行 arxiv_observer 分析 arXiv 论文列表
 
     Args:
@@ -248,4 +284,80 @@ async def run_observer_for_papers(papers: list[dict]) -> list[dict]:
             recommended_papers.append(paper)
 
     logger.info(f"[arxiv_observer] 推荐 {len(recommended_papers)} 篇论文")
+    if return_result:
+        return recommended_papers, result
+    return recommended_papers
+
+
+async def run_pubmed_observer_for_papers(
+    papers: list[dict], query: str, return_result: bool = False
+) -> list[dict] | tuple[list[dict], dict]:
+    """运行 pubmed_observer 分析 PubMed 文献列表
+
+    Args:
+        papers: 文献列表
+        query: 检索词
+
+    Returns:
+        推荐文献列表（从 papers 中筛选出的文献）
+    """
+    if not papers:
+        return []
+
+    agents = discover_agents()
+    pubmed_observer_config = agents.get("pubmed_observer", {})
+
+    if not pubmed_observer_config:
+        logger.error("pubmed_observer agent not found")
+        return []
+
+    # 构建文献上下文
+    papers_context = build_pubmed_papers_for_observer(papers, query)
+
+    # 获取 prompt（移除 frontmatter）
+    prompt_template = pubmed_observer_config["prompt"]
+    lines = prompt_template.split("\n")
+    content_lines = []
+    in_frontmatter = False
+    for line in lines:
+        if line.strip() == "---":
+            in_frontmatter = not in_frontmatter
+            continue
+        if not in_frontmatter:
+            content_lines.append(line)
+    prompt = "\n".join(content_lines)
+
+    # 替换占位符
+    prompt = prompt.replace("__PAPERS_CONTEXT__", papers_context)
+
+    # 注入协作指南
+    collaboration_guidelines = build_collaboration_guidelines(agents)
+    if collaboration_guidelines and "## 协作指南" not in prompt:
+        prompt = f"{prompt}\n\n{collaboration_guidelines}"
+
+    logger.info(f"[pubmed_observer] 开始分析 {len(papers)} 篇候选文献")
+
+    # 调用 pubmed_observer agent
+    result = await run_single_agent(prompt, "pubmed_observer")
+
+    # 解析响应
+    response_text = result.get("response", "")
+    logger.debug(f"[pubmed_observer] 响应长度: {len(response_text)} 字符")
+
+    # 解析推荐结果
+    recommended_indices = parse_papers_recommendation(response_text, len(papers))
+
+    # 从原始文献数据中获取完整信息
+    recommended_papers = []
+    for item in recommended_indices:
+        idx = item["index"]
+        if 0 <= idx < len(papers):
+            paper = papers[idx].copy()
+            paper["reason"] = item.get("reason", "")
+            paper["summary"] = item.get("summary", "")
+            recommended_papers.append(paper)
+
+    logger.info(f"[pubmed_observer] 推荐 {len(recommended_papers)} 篇文献")
+    if return_result:
+        return recommended_papers, result
     return recommended_papers

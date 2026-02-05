@@ -111,13 +111,23 @@ def main():
         print(f"[INFO] 正在获取 Issue #{args.issue} 信息...")
         issue_info = get_issue_info(args.issue, format_comments=True)
 
-        # 构建上下文
-        context = f"**Issue 标题**: {issue_info['title']}\n\n**Issue 内容**:\n{issue_info['body']}"
+        from issuelab.tools.github import write_issue_context_file
+
+        issue_file = write_issue_context_file(
+            issue_number=args.issue,
+            title=issue_info.get("title", ""),
+            body=issue_info.get("body", ""),
+            comments=issue_info.get("comments", ""),
+            comment_count=issue_info.get("comment_count", 0),
+        )
+
+        # 构建上下文（改为文件引用，避免超长 prompt）
+        context = (
+            f"**Issue 内容文件**: {issue_file}\n"
+            "请使用 Read 工具读取该文件后再进行分析。"
+        )
         comment_count = issue_info["comment_count"]
         comments = issue_info["comments"]
-
-        if comment_count > 0 and comments:
-            context += f"\n\n**本 Issue 共有 {comment_count} 条历史评论，请仔细阅读并分析：**\n\n{comments}"
 
         print(f"[OK] 已获取: 标题={issue_info['title'][:30]}..., 评论数={comment_count}")
     else:
@@ -125,6 +135,7 @@ def main():
         comment_count = 0
         comments = ""
         issue_info = {}
+        issue_file = ""
 
     if args.command == "execute":
         agents = parse_agents_arg(args.agents)
@@ -188,8 +199,15 @@ def main():
 
     elif args.command == "observe":
         # 运行 Observer Agent 分析 Issue
+        issue_body_ref = (
+            f"内容已保存至文件: {issue_file}\n请使用 Read 工具读取该文件后再分析。"
+            if issue_file
+            else (issue_info.get("body", "") or "无内容")
+        )
+        comments_ref = "历史评论已包含在同一文件中。" if issue_file else (comments or "无评论")
+
         result = asyncio.run(
-            run_observer(args.issue, issue_info.get("title", ""), issue_info.get("body", ""), comments)
+            run_observer(args.issue, issue_info.get("title", ""), issue_body_ref, comments_ref)
         )
 
         print(f"\n=== Observer Analysis for Issue #{args.issue} ===")
@@ -240,12 +258,22 @@ def main():
                     body = comment.get("body", "")
                     comments.append(f"- **[{author}]**: {body}")
 
+                from issuelab.tools.github import write_issue_context_file
+
+                issue_file = write_issue_context_file(
+                    issue_number=issue_num,
+                    title=data.get("title", ""),
+                    body=data.get("body", ""),
+                    comments="\n".join(comments),
+                    comment_count=len(comments),
+                )
+
                 issue_data_list.append(
                     {
                         "issue_number": issue_num,
                         "issue_title": data.get("title", ""),
-                        "issue_body": data.get("body", ""),
-                        "comments": "\n".join(comments),
+                        "issue_body": f"内容已保存至文件: {issue_file}\n请使用 Read 工具读取该文件后再分析。",
+                        "comments": "历史评论已包含在同一文件中。",
                     }
                 )
             except Exception as e:

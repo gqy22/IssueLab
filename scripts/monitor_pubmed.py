@@ -18,6 +18,7 @@ Environment:
 """
 
 import argparse
+import asyncio
 import json
 import logging
 import os
@@ -79,6 +80,7 @@ class PubMedClient:
             "retmax": max_results,
             "datetype": datetype,
             "email": self.email,
+            "sort": "pub date",  # 按出版日期排序（最新在前）
         }
 
         if mindate:
@@ -124,21 +126,95 @@ class PubMedClient:
             logger.error(f"PubMed summary failed: {e}")
             return {}
 
+    def efetch(self, id_list: list[str]) -> dict:
+        """使用 efetch 获取 DOI 等完整信息
+
+        Args:
+            id_list: PMID 列表
+
+        Returns:
+            PMID -> ArticleIdList 的字典
+        """
+        if not id_list:
+            return {}
+
+        self._rate_limit()
+
+        ids_str = ",".join(id_list)
+        params = {
+            "db": "pubmed",
+            "id": ids_str,
+            "retmode": "xml",
+            "rettype": "abstract",
+            "email": self.email,
+        }
+
+        url = f"{self.BASE_URL}/efetch.fcgi?{urllib.parse.urlencode(params)}"
+
+        try:
+            import xml.etree.ElementTree as ET
+
+            with urllib.request.urlopen(url) as response:
+                xml_data = response.read().decode()
+                root = ET.fromstring(xml_data)
+
+                result = {}
+                for article in root.findall(".//PubmedArticle"):
+                    pmid_elem = article.find(".//PMID")
+                    if pmid_elem is None:
+                        continue
+                    pmid = pmid_elem.text
+
+                    # 查找 DOI
+                    doi = ""
+                    for article_id in article.findall(".//ArticleId"):
+                        id_type = article_id.get("IdType", "")
+                        if id_type == "doi":
+                            doi = article_id.text.strip()
+                            break
+
+                    result[pmid] = {"doi": doi}
+                return result
+        except Exception as e:
+            logger.error(f"PubMed efetch failed: {e}")
+            return {}
+
 
 def parse_pubmed_date(date_str: str) -> str:
     """解析 PubMed 日期格式"""
     if not date_str:
         return "Unknown"
-    try:
-        # PubMed 格式: "2024 Jan 15" 或 "2024/01/15"
-        dt = datetime.strptime(date_str.strip(), "%Y %b %d")
-        return dt.strftime("%Y-%m-%d")
-    except ValueError:
+    raw = date_str.strip()
+
+    # 移除常见的附加信息（如 Epub/doi/Online ahead of print）
+    raw = re.split(r";|\s+Epub\b|\s+doi:\b|\s+Online ahead of print\b", raw, maxsplit=1)[0].strip()
+    raw = raw.rstrip(".")
+
+    # PubMed 常见格式: "2024 Jan 15", "2024 Jan", "2024/01/15", "2024-01-15"
+    for fmt in ("%Y %b %d", "%Y %B %d", "%Y/%m/%d", "%Y-%m-%d"):
         try:
-            dt = datetime.strptime(date_str.strip(), "%Y/%m/%d")
+            dt = datetime.strptime(raw, fmt)
             return dt.strftime("%Y-%m-%d")
         except ValueError:
-            return date_str[:10] if date_str else "Unknown"
+            continue
+
+    # 只有年月
+    month_match = re.match(r"^(\d{4})\s+([A-Za-z]{3,})$", raw)
+    if month_match:
+        year = month_match.group(1)
+        month = month_match.group(2)
+        for fmt in ("%Y %b %d", "%Y %B %d"):
+            try:
+                dt = datetime.strptime(f"{year} {month} 01", fmt)
+                return dt.strftime("%Y-%m-%d")
+            except ValueError:
+                continue
+
+    # 只有年份
+    if re.match(r"^\d{4}$", raw):
+        return f"{raw}-01-01"
+
+    return date_str[:10] if date_str else "Unknown"
 
 
 def clean_text(text: str) -> str:
@@ -171,7 +247,7 @@ def fetch_papers(query: str, email: str, days: int = 7, max_papers: int = 20) ->
     """
     # 计算日期范围
     end_date = datetime.now().strftime("%Y/%m/%d")
-    start_date = (datetime.now() - datetime.timedelta(days=days)).strftime("%Y/%m/%d")
+    start_date = (datetime.now() - timedelta(days=days)).strftime("%Y/%m/%d")
 
     logger.info(f"检索词: {query}")
     logger.info(f"时间范围: {start_date} - {end_date}")
@@ -184,7 +260,7 @@ def fetch_papers(query: str, email: str, days: int = 7, max_papers: int = 20) ->
         max_results=max_papers * 2,  # 多取一些供筛选
         mindate=start_date,
         maxdate=end_date,
-        datetype="pdat",
+        datetype="pdat",  # pdat=出版日期，edat=数据库收录日期
     )
 
     if not pmids:
@@ -195,6 +271,9 @@ def fetch_papers(query: str, email: str, days: int = 7, max_papers: int = 20) ->
 
     # Step 2: esummary 获取详情
     details = client.summary(pmids)
+
+    # Step 3: efetch 获取 DOI
+    efetch_data = client.efetch(pmids)
 
     # 解析文献
     papers = []
@@ -211,14 +290,19 @@ def fetch_papers(query: str, email: str, days: int = 7, max_papers: int = 20) ->
         # 获取摘要 (efetch 需要另外调用，这里先用 keywords)
         keywords = doc.get("keywords", [])
 
+        # 获取 DOI (优先使用 efetch 结果)
+        doi = efetch_data.get(uid, {}).get("doi", "") or doc.get("doi", "")
+
         papers.append(
             {
                 "pmid": uid,
                 "title": clean_text(doc.get("title", "")),
                 "journal": doc.get("source", ""),
                 "pubdate": parse_pubmed_date(doc.get("pubdate", "")),
+                "epubdate": parse_pubmed_date(doc.get("epubdate", "")),
+                "entrezdate": parse_pubmed_date(doc.get("entrezdate", "") or doc.get("sortdate", "")),
                 "authors": authors,
-                "doi": doc.get("doi", ""),
+                "doi": doi,
                 "url": f"https://pubmed.ncbi.nlm.nih.gov/{uid}/",
                 "keywords": keywords if isinstance(keywords, list) else [],
                 "has_abstract": doc.get("hasabstract", 0),
@@ -245,7 +329,11 @@ def build_papers_for_observer(papers: list[dict], query: str) -> str:
         lines.append(f"**PMID**: [{paper['pmid']}]({paper['url']})")
         lines.append(f"**标题**: {paper['title']}")
         lines.append(f"**期刊**: {paper['journal']}")
-        lines.append(f"**发表日期**: {paper['pubdate']}")
+        lines.append(f"**发表日期**: {paper.get('pubdate', '')}")
+        if paper.get("epubdate"):
+            lines.append(f"**在线发表**: {paper.get('epubdate', '')}")
+        if paper.get("entrezdate"):
+            lines.append(f"**入库日期**: {paper.get('entrezdate', '')}")
         lines.append(f"**作者**: {paper['authors']}")
         if paper.get("keywords"):
             lines.append(f"**关键词**: {', '.join(paper['keywords'][:5])}")
@@ -307,26 +395,18 @@ def analyze_with_observer(papers: list[dict], query: str, token: str) -> list[di
         logger.warning("文献数量不足 2 篇，无法进行智能推荐")
         return []
 
-    # 转换格式以适配现有 observer
-    adapted_papers = []
-    for _i, paper in enumerate(papers):
-        adapted_papers.append(
-            {
-                "id": paper["pmid"],
-                "title": paper["title"],
-                "summary": paper.get("keywords", [])[:3],  # 用关键词替代摘要
-                "url": paper["url"],
-                "pdf_url": paper["doi"],  # 用 DOI 替代 PDF
-                "authors": paper["authors"],
-                "published": paper["pubdate"],
-                "category": paper["journal"],
-            }
-        )
-
-    # 调用 Observer
+    # 调用 PubMed Observer 智能体
     try:
-        # 这里需要创建 pubmed_observer，暂时使用启发式规则
-        recommended = heuristic_selection(papers, query)
+        from pathlib import Path
+
+        # 动态导入 SDK
+        sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+        from issuelab.agents.observer import run_pubmed_observer_for_papers
+
+        logger.debug("[Observer] 调用 run_pubmed_observer_for_papers...")
+        recommended = asyncio.run(run_pubmed_observer_for_papers(papers, query))
+        logger.info(f"[Observer] 分析完成，推荐 {len(recommended)} 篇文献")
+        logger.debug(f"[Observer] 推荐结果: {recommended}")
         return recommended
     except Exception as e:
         logger.error(f"[Observer] 分析失败: {e}")
@@ -415,11 +495,14 @@ def create_issues(recommended: list[dict], repo_name: str, token: str, query: st
             f"""### {i + 1}. {paper["title"]}
 
 - **PMID**: [{paper["pmid"]}]({paper["url"]})
-- **DOI**: [{paper["doi"]}](https://doi.org/{paper["doi"]}) if paper['doi'] else 'N/A'
+- **DOI**: {f"[{paper['doi']}](https://doi.org/{paper['doi']})" if paper.get('doi') else "N/A"}
 - **期刊**: {paper["journal"]}
-- **发表日期**: {paper["pubdate"]}
+- **发表日期**: {paper.get("pubdate", "N/A")}
+- **在线发表**: {paper.get("epubdate", "N/A")}
+- **入库日期**: {paper.get("entrezdate", "N/A")}
 - **作者**: {paper["authors"]}
-- **推荐理由**: {paper["reason"]}"""
+- **推荐理由**: {paper.get("reason", "")}
+- **推荐摘要**: {paper.get("summary", "")}"""
             for i, paper in enumerate(recommended)
         ]
     )
@@ -463,7 +546,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--token", type=str, help="GitHub Token")
     parser.add_argument("--repo", type=str, help="Repository (owner/repo)")
     parser.add_argument(
-        "--query", type=str, default="(speciation) OR (hybrid speciation) OR (introgression)", help="PubMed 检索词"
+        "--query", type=str, default='"Speciation"[Mesh] OR "Hybridization, Genetic"[Mesh] OR "Genetic Introgression"[Mesh] OR "Reproductive Isolation"[Mesh] OR "Gene Flow"[Mesh] OR (speciation[Title/Abstract] AND species[Title/Abstract]) OR ("lineage sorting"[Title/Abstract]) OR ("adaptive radiation"[Title/Abstract]) OR ("incipient species"[Title/Abstract])', help="PubMed 检索词"
     )
     parser.add_argument("--days", type=int, default=1, help="追溯天数（默认: 1，即最近 1 天）")
     parser.add_argument("--max-papers", type=int, default=10, help="获取文献数量（分析前，默认: 10）")
@@ -474,10 +557,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     # 环境变量覆盖
-    email = args.email or os.environ.get("PUBMED_EMAIL")
-    if not email:
-        logger.error("请提供 --email 参数或设置 PUBMED_EMAIL 环境变量")
-        return 1
+    email = args.email or os.environ.get("PUBMED_EMAIL") or "qingyu_ge@foxmail.com"
 
     # 日志级别
     log_level = getattr(logging, os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO)

@@ -1,0 +1,90 @@
+name: Auto-Close Stale Issues
+
+on:
+  schedule:
+    # 每天凌晨 2 点运行
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      max_comments:
+        description: 'Max comments threshold (default: 200)'
+        required: false
+        default: '200'
+        type: string
+      dry_run:
+        description: 'Dry run (no changes)'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+
+permissions:
+  issues: write
+
+jobs:
+  close-stale-issues:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Close issues with >N comments
+        run: |
+          # 配置
+          MAX_COMMENTS=${{ github.event.inputs.max_comments || '200' }}
+          DRY_RUN=${{ github.event.inputs.dry_run || 'true' }}
+          REPO="${{ github.repository }}"
+
+          echo "🔍 检查超过 $MAX_COMMENTS 回复的 issue..."
+          echo "📊 仓库: $REPO"
+          echo "🔬 模式: $([ "$DRY_RUN" = "true" ] && echo "干运行" || echo "实际执行")"
+          echo ""
+
+          # 先获取所有 open issue 编号，然后逐个检查准确评论数
+          # gh issue list 的 comments 字段有 100 条限制，需用 issue view 获取完整数量
+          echo "📋 检查所有 open issue 的评论数..."
+
+          TO_CLOSE=""
+          for issue_num in $(gh issue list --repo "$REPO" --state open --json number --jq '.[].number'); do
+            COMMENTS=$(gh issue view $issue_num --repo "$REPO" --json comments --jq '.comments | length')
+            TITLE=$(gh issue view $issue_num --repo "$REPO" --json title --jq '.title')
+
+            if [ "$COMMENTS" -gt "$MAX_COMMENTS" ]; then
+              echo "  #$issue_num: $TITLE"
+              echo "     回复数: $COMMENTS (超过 $MAX_COMMENTS)"
+              TO_CLOSE="$TO_CLOSE $issue_num"
+            fi
+          done
+          echo ""
+
+          if [ -z "$TO_CLOSE" ]; then
+            echo "✅ 没有超过 $MAX_COMMENTS 回复的 issue"
+            exit 0
+          fi
+
+          COUNT=$(echo "$TO_CLOSE" | wc -w)
+          echo "⚠️  发现 $COUNT 个需要关闭的 issue:"
+          echo ""
+
+          for issue_num in $TO_CLOSE; do
+            TITLE=$(gh issue view $issue_num --repo "$REPO" --json title --jq '.title')
+            COMMENTS=$(gh issue view $issue_num --repo "$REPO" --json comments --jq '.comments | length')
+
+            echo "  #$issue_num: $TITLE"
+            echo "     回复数: $COMMENTS"
+
+            if [ "$DRY_RUN" = "false" ]; then
+              gh issue close $issue_num \
+                --repo "$REPO" \
+                --comment "🤖 此 issue 已超过 $MAX_COMMENTS 回复，自动关闭。如需继续讨论，请开启新 issue。"
+              echo "     → 已关闭"
+            else
+              echo "     → [干运行] 将被关闭"
+            fi
+            echo ""
+          done
+
+          if [ "$DRY_RUN" = "false" ]; then
+            echo "✅ 完成：关闭了 $COUNT 个 issue"
+          else
+            echo "ℹ️  干运行完成：$COUNT 个 issue 将被关闭"
+          fi

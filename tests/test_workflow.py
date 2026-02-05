@@ -133,6 +133,6 @@ def test_default_agent_config():
     from issuelab.agents.config import AgentConfig
 
     config = AgentConfig()
-    assert config.max_turns == 3
+    assert config.max_turns == 15
     assert config.max_budget_usd == 0.50
     assert config.timeout_seconds == 180

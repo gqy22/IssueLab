@@ -3,10 +3,16 @@
 处理 SDK 选项的创建和缓存管理。
 """
 
+import json
+import os
+from pathlib import Path
+from typing import Any
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+
 from claude_agent_sdk import AgentDefinition, ClaudeAgentOptions
 
 from issuelab.agents.config import AgentConfig
-from issuelab.agents.discovery import discover_agents
+from issuelab.agents.discovery import AGENTS_DIR, discover_agents
 from issuelab.config import Config
 from issuelab.logging_config import get_logger
 
@@ -26,9 +32,103 @@ def clear_agent_options_cache() -> None:
     logger.info("Agent 选项缓存已清除")
 
 
+def _read_mcp_servers_from_file(path: Path) -> dict[str, Any]:
+    """读取 .mcp.json 并返回 mcpServers 字典
+
+    支持两种格式：
+    1) {"mcpServers": { ... }}
+    2) { ... }  # 直接就是 servers 映射
+    """
+    if not path.exists():
+        return {}
+
+    try:
+        raw_text = _read_text_with_timeout(path)
+        raw = json.loads(raw_text)
+    except (json.JSONDecodeError, OSError) as exc:
+        logger.warning("读取 MCP 配置失败: %s (%s)", path, exc)
+        return {}
+    except TimeoutError as exc:
+        logger.warning("读取 MCP 配置超时，已跳过: %s (%s)", path, exc)
+        return {}
+
+    if not isinstance(raw, dict):
+        logger.warning("MCP 配置格式错误（非 dict）: %s", path)
+        return {}
+
+    servers = raw.get("mcpServers", raw)
+    if not isinstance(servers, dict):
+        logger.warning("MCP 配置格式错误（mcpServers 非 dict）: %s", path)
+        return {}
+
+    return servers
+
+
+def _read_text_with_timeout(path: Path) -> str:
+    """读取文件内容（带超时）"""
+    timeout_ms = int(os.environ.get("MCP_CONFIG_LOAD_TIMEOUT_MS", "3000"))
+    timeout_sec = max(timeout_ms, 0) / 1000.0
+
+    def _read() -> str:
+        return path.read_text(encoding="utf-8")
+
+    if timeout_sec <= 0:
+        return _read()
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(_read)
+        try:
+            return future.result(timeout=timeout_sec)
+        except FutureTimeoutError as exc:
+            raise TimeoutError(f"read timeout after {timeout_ms}ms") from exc
+
+
+def load_mcp_servers_for_agent(agent_name: str | None, root_dir: Path | None = None) -> dict[str, Any]:
+    """加载 MCP 服务器配置（全局 + per-agent 覆盖）"""
+    root = root_dir or AGENTS_DIR.parent
+    servers: dict[str, Any] = {}
+
+    # 全局配置：项目根目录 .mcp.json
+    servers.update(_read_mcp_servers_from_file(root / ".mcp.json"))
+
+    # Agent 级别配置：agents/<name>/.mcp.json
+    if agent_name:
+        servers.update(_read_mcp_servers_from_file(root / "agents" / agent_name / ".mcp.json"))
+
+    return servers
+
+
+def format_mcp_servers_for_prompt(agent_name: str | None, root_dir: Path | None = None) -> str:
+    """为 prompt 格式化 MCP 服务器列表"""
+    servers = load_mcp_servers_for_agent(agent_name, root_dir=root_dir)
+    if not servers:
+        return "（未配置 MCP 工具）"
+    lines = []
+    for name, cfg in servers.items():
+        cfg_type = ""
+        if isinstance(cfg, dict):
+            cfg_type = cfg.get("type", "")
+        type_text = f" [{cfg_type}]" if cfg_type else ""
+        lines.append(f"- {name}{type_text}")
+    return "\n".join(lines)
+
+
+def _mcp_cache_key(servers: dict[str, Any]) -> str:
+    """生成 MCP 配置的稳定缓存键"""
+    if not servers:
+        return ""
+    try:
+        return json.dumps(servers, sort_keys=True, ensure_ascii=True)
+    except TypeError:
+        return str(servers)
+
+
 def _create_agent_options_impl(
     max_turns: int | None,
     max_budget_usd: float | None,
+    *,
+    agent_name: str | None,
+    mcp_servers: dict[str, Any],
 ) -> ClaudeAgentOptions:
     """创建 Agent 选项的实际实现（无缓存）"""
     env = Config.get_anthropic_env()
@@ -49,7 +149,6 @@ def _create_agent_options_impl(
     agents = discover_agents()
 
     base_tools = ["Read", "Write", "Bash"]
-
     all_tools = base_tools
     model = Config.get_anthropic_model()
 
@@ -64,12 +163,19 @@ def _create_agent_options_impl(
             model=model,
         )
 
+    allowed_tools = base_tools[:]
+    if mcp_servers:
+        allowed_tools.extend([f"mcp__{name}__*" for name in mcp_servers])
+
     return ClaudeAgentOptions(
         agents=agent_definitions,
         max_turns=max_turns if max_turns is not None else AgentConfig().max_turns,
         max_budget_usd=max_budget_usd if max_budget_usd is not None else AgentConfig().max_budget_usd,
         setting_sources=["user", "project"],
         env=env,
+        permission_mode="bypassPermissions",
+        allowed_tools=allowed_tools,
+        mcp_servers=mcp_servers,
         stderr=sdk_stderr_handler,  # 捕获 SDK 内部详细日志
     )
 
@@ -77,6 +183,8 @@ def _create_agent_options_impl(
 def create_agent_options(
     max_turns: int | None = None,
     max_budget_usd: float | None = None,
+    *,
+    agent_name: str | None = None,
 ) -> ClaudeAgentOptions:
     """创建包含所有评审代理的配置（动态发现）
 
@@ -100,7 +208,13 @@ def create_agent_options(
     effective_max_budget = max_budget_usd if max_budget_usd is not None else AgentConfig().max_budget_usd
 
     # 缓存键：使用参数元组
-    cache_key = (effective_max_turns, effective_max_budget)
+    mcp_servers = load_mcp_servers_for_agent(agent_name)
+    if mcp_servers:
+        server_names = ", ".join(sorted(mcp_servers.keys()))
+        logger.info("MCP servers loaded for agent '%s': %s", agent_name or "default", server_names)
+    else:
+        logger.info("No MCP servers configured for agent '%s'", agent_name or "default")
+    cache_key = (effective_max_turns, effective_max_budget, agent_name or "", _mcp_cache_key(mcp_servers))
 
     # 检查缓存
     if cache_key in _cached_agent_options:
@@ -108,7 +222,12 @@ def create_agent_options(
         return _cached_agent_options[cache_key]
 
     # 创建新配置
-    options = _create_agent_options_impl(max_turns, max_budget_usd)
+    options = _create_agent_options_impl(
+        max_turns,
+        max_budget_usd,
+        agent_name=agent_name,
+        mcp_servers=mcp_servers,
+    )
 
     # 存入缓存
     _cached_agent_options[cache_key] = options

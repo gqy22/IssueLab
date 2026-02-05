@@ -1,12 +1,22 @@
 """测试 SDK 执行器"""
 
+import json
+import tempfile
+from pathlib import Path
+
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from issuelab.agents.config import SCENE_CONFIGS, AgentConfig, get_agent_config_for_scene
 from issuelab.agents.discovery import discover_agents, load_prompt
-from issuelab.agents.options import _cached_agent_options, clear_agent_options_cache, create_agent_options
+from issuelab.agents.options import (
+    _cached_agent_options,
+    clear_agent_options_cache,
+    create_agent_options,
+    load_mcp_servers_for_agent,
+    format_mcp_servers_for_prompt,
+)
 from issuelab.agents.parsers import parse_observer_response
 
 
@@ -56,7 +66,7 @@ class TestAgentConfig:
     def test_agent_config_defaults(self):
         """AgentConfig 应该有合理的默认值"""
         config = AgentConfig()
-        assert config.max_turns == 3
+        assert config.max_turns == 15
         assert config.max_budget_usd == 0.50
         assert config.timeout_seconds == 180
 
@@ -114,12 +124,70 @@ class TestCreateAgentOptionsWithTimeout:
     def test_create_agent_options_uses_default_max_turns(self):
         """create_agent_options 应该使用默认的 max_turns"""
         options = create_agent_options()
-        assert options.max_turns == 3  # 默认值
+        assert options.max_turns == 15  # 默认值
 
     def test_create_agent_options_uses_default_max_budget_usd(self):
         """create_agent_options 应该使用默认的 max_budget_usd"""
         options = create_agent_options()
         assert options.max_budget_usd == 0.50  # 默认值
+
+
+class TestMcpConfigLoading:
+    """测试 MCP 配置加载"""
+
+    def test_load_mcp_servers_for_agent_merges(self, tmp_path: Path):
+        """全局 + agent 配置应合并，agent 覆盖同名 server"""
+        root_mcp = {
+            "mcpServers": {
+                "global": {"type": "http", "url": "https://global.example.com"},
+                "shared": {"type": "http", "url": "https://root.example.com"},
+            }
+        }
+        agent_mcp = {
+            "mcpServers": {
+                "agent": {"type": "http", "url": "https://agent.example.com"},
+                "shared": {"type": "http", "url": "https://agent.example.com"},
+            }
+        }
+
+        (tmp_path / ".mcp.json").write_text(json.dumps(root_mcp), encoding="utf-8")
+        agent_dir = tmp_path / "agents" / "alice"
+        agent_dir.mkdir(parents=True)
+        (agent_dir / ".mcp.json").write_text(json.dumps(agent_mcp), encoding="utf-8")
+
+        servers = load_mcp_servers_for_agent("alice", root_dir=tmp_path)
+        assert servers["global"]["url"] == "https://global.example.com"
+        assert servers["agent"]["url"] == "https://agent.example.com"
+        assert servers["shared"]["url"] == "https://agent.example.com"
+
+    def test_create_agent_options_includes_mcp_allowed_tools(self):
+        """当存在 MCP servers 时，应包含 mcp__<server>__* 授权"""
+        clear_agent_options_cache()
+        with patch("issuelab.agents.options.load_mcp_servers_for_agent") as mock_load:
+            mock_load.return_value = {"docs": {"type": "http", "url": "https://docs.example.com"}}
+            options = create_agent_options(agent_name="moderator")
+            assert "mcp__docs__*" in options.allowed_tools
+            assert "Read" in options.allowed_tools
+            assert "Write" in options.allowed_tools
+            assert "Bash" in options.allowed_tools
+
+    def test_format_mcp_servers_for_prompt(self, tmp_path: Path):
+        """格式化 MCP 列表应包含 server 名称"""
+        root_mcp = {"mcpServers": {"alpha": {"type": "http", "url": "https://a.example.com"}}}
+        (tmp_path / ".mcp.json").write_text(json.dumps(root_mcp), encoding="utf-8")
+
+        text = format_mcp_servers_for_prompt("any", root_dir=tmp_path)
+        assert "- alpha [http]" in text
+
+    def test_mcp_load_timeout_returns_empty(self):
+        """MCP 读取超时应被忽略"""
+        tmp_root = Path(tempfile.gettempdir()) / "issuelab_mcp_timeout"
+        tmp_root.mkdir(parents=True, exist_ok=True)
+        (tmp_root / ".mcp.json").write_text("{}", encoding="utf-8")
+        with patch("issuelab.agents.options._read_text_with_timeout") as mock_read:
+            mock_read.side_effect = TimeoutError("timeout")
+            servers = load_mcp_servers_for_agent("any", root_dir=tmp_root)
+            assert servers == {}
 
 
 class TestEnvOptimization:

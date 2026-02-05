@@ -171,6 +171,31 @@ def extract_mentions(text: str) -> list[str]:
     return list(dict.fromkeys(matches))
 
 
+def rank_mentions_by_frequency(text: str) -> list[str]:
+    """按出现次数排序 @mentions（次数降序，首次出现位置升序）"""
+    if not text:
+        return []
+
+    matches = MENTION_PATTERN.findall(text)
+    matches = [m for m in matches if not m.isdigit()]
+    if not matches:
+        return []
+
+    counts: dict[str, int] = {}
+    first_index: dict[str, int] = {}
+    canonical: dict[str, str] = {}
+
+    for idx, mention in enumerate(matches):
+        key = mention.lower()
+        counts[key] = counts.get(key, 0) + 1
+        if key not in first_index:
+            first_index[key] = idx
+            canonical[key] = mention
+
+    ordered_keys = sorted(counts.keys(), key=lambda k: (-counts[k], first_index[k]))
+    return [canonical[k] for k in ordered_keys]
+
+
 def clean_mentions_in_text(text: str, replacement: str = "用户 {username}") -> str:
     """清理文本中的所有 @mentions"""
     if not text:

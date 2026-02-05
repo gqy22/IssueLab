@@ -14,7 +14,7 @@ from claude_agent_sdk import (
     query,
 )
 
-from issuelab.agents.options import create_agent_options
+from issuelab.agents.options import create_agent_options, format_mcp_servers_for_prompt
 from issuelab.logging_config import get_logger
 from issuelab.retry import retry_async
 
@@ -51,7 +51,7 @@ async def run_single_agent(prompt: str, agent_name: str) -> dict:
     }
 
     async def _query_agent():
-        options = create_agent_options()
+        options = create_agent_options(agent_name=agent_name)
         response_text = []
         turn_count = 0
         tool_calls = []
@@ -195,6 +195,14 @@ async def run_agents_parallel(
         }
     """
     from issuelab.agents.discovery import discover_agents, load_prompt
+    from issuelab.agents.observer import run_observer_for_papers, run_pubmed_observer_for_papers
+    from issuelab.agents.paper_extractors import (
+        extract_issue_body,
+        format_arxiv_reanalysis,
+        format_pubmed_reanalysis,
+        parse_arxiv_papers_from_issue,
+        parse_pubmed_papers_from_issue,
+    )
     from issuelab.collaboration import build_collaboration_guidelines
 
     # 构建任务上下文（Issue 信息）
@@ -217,11 +225,51 @@ async def run_agents_parallel(
         """并行任务：运行单个 agent"""
         logger.info(f"[Issue#{issue_number}] [并行] 开始执行 {agent_name}")
 
+        # 特殊：pubmed_observer / arxiv_observer 需要从 Issue 正文解析文献列表
+        if agent_name in {"pubmed_observer", "arxiv_observer"}:
+            issue_body = extract_issue_body(task_context)
+            if agent_name == "pubmed_observer":
+                papers, query = parse_pubmed_papers_from_issue(issue_body)
+                if not papers:
+                    results[agent_name] = {
+                        "response": "[Agent: pubmed_observer]\n未在 Issue 正文中识别到 PubMed 文献列表。",
+                        "cost_usd": 0.0,
+                        "num_turns": 0,
+                        "tool_calls": [],
+                    }
+                    return
+
+                recommended, raw_result = await run_pubmed_observer_for_papers(papers, query, return_result=True)
+                response = format_pubmed_reanalysis(recommended, query, total=len(papers))
+                raw_result["response"] = response
+                results[agent_name] = raw_result
+                return
+
+            papers = parse_arxiv_papers_from_issue(issue_body)
+            if not papers:
+                results[agent_name] = {
+                    "response": "[Agent: arxiv_observer]\n未在 Issue 正文中识别到 arXiv 论文信息。",
+                    "cost_usd": 0.0,
+                    "num_turns": 0,
+                    "tool_calls": [],
+                }
+                return
+
+            recommended, raw_result = await run_observer_for_papers(papers, return_result=True)
+            response = format_arxiv_reanalysis(recommended, total=len(papers))
+            raw_result["response"] = response
+            results[agent_name] = raw_result
+            return
+
         # 1. 加载 agent 的专属 prompt（定义角色和职责）
         agent_prompt = load_prompt(agent_name)
         if not agent_prompt:
             logger.warning(f"[{agent_name}] 未找到 prompt 文件，使用默认配置")
             agent_prompt = f"你是 {agent_name} 代理。"
+
+        if "{mcp_servers}" in agent_prompt:
+            mcp_text = format_mcp_servers_for_prompt(agent_name)
+            agent_prompt = agent_prompt.replace("{mcp_servers}", mcp_text)
 
         # 2. 构建最终 prompt：角色定义 + 当前任务
         final_prompt = f"""{agent_prompt}

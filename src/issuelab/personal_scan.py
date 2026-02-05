@@ -141,7 +141,10 @@ def select_top_issues(candidates: list[dict[str, Any]], max_count: int = 3) -> l
 
 
 async def llm_select_issues_async(
-    agent_config: dict[str, Any], issues_data: list[dict[str, Any]], max_replies: int = 3
+    agent_config: dict[str, Any],
+    issues_data: list[dict[str, Any]],
+    max_replies: int = 3,
+    agent_name: str | None = None,
 ) -> dict[str, Any]:
     """使用LLM智能选择Issues（异步版本）"""
     from claude_agent_sdk import query
@@ -172,7 +175,7 @@ async def llm_select_issues_async(
     # 调用智能体
     logger.info("[LLM] 调用智能体分析...")
     response_text = ""
-    options = create_agent_options()
+    options = create_agent_options(agent_name=agent_name)
 
     async for message in query(prompt=prompt, options=options):
         if hasattr(message, "content"):
@@ -197,9 +200,14 @@ async def llm_select_issues_async(
         return {"selected_issues": [], "selections": [], "reasoning": f"错误: {e}"}
 
 
-def llm_select_issues(agent_config: dict, issues_data: list[dict], max_replies: int = 3) -> dict:
+def llm_select_issues(
+    agent_config: dict,
+    issues_data: list[dict],
+    max_replies: int = 3,
+    agent_name: str | None = None,
+) -> dict:
     """使用LLM智能选择Issues（同步版本）"""
-    return asyncio.run(llm_select_issues_async(agent_config, issues_data, max_replies))
+    return asyncio.run(llm_select_issues_async(agent_config, issues_data, max_replies, agent_name=agent_name))
 
 
 def scan_issues_for_personal_agent(
@@ -256,7 +264,7 @@ def scan_issues_for_personal_agent(
     if USE_LLM_SCAN and candidates_data:
         logger.info("📊 使用LLM智能分析...")
         try:
-            result = llm_select_issues(agent_config, candidates_data, max_replies)
+            result = llm_select_issues(agent_config, candidates_data, max_replies, agent_name=agent_name)
 
             selected_numbers = result.get("selected_issues", [])
             selected_details = result.get("selections", [])

@@ -19,7 +19,7 @@ class AgentConfig:
         timeout_seconds: 总超时时间（秒）
     """
 
-    max_turns: int = 3
+    max_turns: int = 15
     max_budget_usd: float = 0.50
     timeout_seconds: int = 180
 
@@ -27,17 +27,17 @@ class AgentConfig:
 # 场景配置
 SCENE_CONFIGS: dict[str, AgentConfig] = {
     "quick": AgentConfig(
-        max_turns=2,
+        max_turns=10,
         max_budget_usd=0.20,
         timeout_seconds=60,
     ),
     "review": AgentConfig(
-        max_turns=5,  # 增加到5轮，支持需要多次工具调用的agent（如summarizer）
+        max_turns=25,  # 增加到25轮，支持需要多次工具调用的agent（如summarizer）
         max_budget_usd=0.50,
         timeout_seconds=180,
     ),
     "deep": AgentConfig(
-        max_turns=5,
+        max_turns=25,
         max_budget_usd=1.00,
         timeout_seconds=300,
     ),

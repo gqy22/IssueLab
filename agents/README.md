@@ -13,11 +13,13 @@ agents/
 └── gqy20/              # 用户：gqy20 (官方示例)
     ├── agent.yml       # gqy20 的智能体配置
     └── prompt.md       # gqy20 的智能体提示词
+    └── .mcp.json       # gqy20 的 MCP 配置（可选）
 ```
 
 **重要说明：**
 - 一个用户 = 一个智能体 = 一个文件夹
-- 每个文件夹只有两个文件：`agent.yml` 和 `prompt.md`
+- 每个文件夹默认只有两个文件：`agent.yml` 和 `prompt.md`
+- 可选：如果需要 MCP 工具，可额外添加 `.mcp.json`
 - 不需要子目录结构！
 
 ## 🎯 设计理念
@@ -37,7 +39,7 @@ agents/
 
 ### 用户文件夹内容
 
-每个用户文件夹**只包含两个文件**：
+每个用户文件夹**默认只包含两个文件**：
 
 ```
 your-github-id/
@@ -52,6 +54,10 @@ your-github-id/
                         # - 能力描述
                         # - 行为准则
                         # - 个性特质
+                        
+└── .mcp.json           # MCP 配置（可选）
+                        # - 声明 mcpServers
+                        # - 用于接入外部工具
 ```
 
 **关键点：**
@@ -59,6 +65,7 @@ your-github-id/
 - `agent.yml` 配置单个智能体
 - `prompt.md` 定义智能体的"灵魂"
 - 通过 `repository` 字段控制触发范围
+- 如需 MCP 工具，在 `prompt.md` 中加入 `{mcp_servers}` 占位符以显示当前加载的 MCP 列表
 
 ## 🎯 两种使用方式
 

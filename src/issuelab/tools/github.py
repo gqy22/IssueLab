@@ -62,6 +62,40 @@ def get_issue_info(issue_number: int, format_comments: bool = False) -> dict:
     return data
 
 
+def write_issue_context_file(
+    issue_number: int,
+    title: str,
+    body: str,
+    comments: str,
+    comment_count: int | None = None,
+) -> str:
+    """写入 Issue 上下文到临时文件，返回文件路径。"""
+    base_dir = os.path.join(os.getcwd(), ".issuelab")
+    os.makedirs(base_dir, exist_ok=True)
+    path = os.path.join(base_dir, f"issue_{issue_number}.md")
+
+    lines = [f"# Issue {issue_number}", ""]
+    if title:
+        lines.extend(["## 标题", title, ""])
+
+    lines.extend(["## 正文", body or "无内容", ""])
+
+    if comment_count is None:
+        comment_count = 0 if not comments else len([c for c in comments.splitlines() if c.strip()])
+
+    lines.append(f"## 评论（{comment_count}）")
+    if comments:
+        lines.append(comments)
+    else:
+        lines.append("无评论")
+
+    content = "\n".join(lines)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+    return path
+
+
 def truncate_text(text: str, max_length: int = MAX_COMMENT_LENGTH) -> str:
     """截断文本到指定长度，保留完整段落
 
@@ -124,11 +158,11 @@ def post_comment(
 
     # 自动清理和过滤 @mentions（集中式管理的核心）
     if mentions is None and auto_clean:
-        from issuelab.mention_policy import filter_mentions
-        from issuelab.response_processor import clean_mentions_in_text, extract_mentions
+        from issuelab.mention_policy import filter_mentions, rank_mentions_by_frequency
+        from issuelab.response_processor import clean_mentions_in_text
 
         # 1. 提取所有 @mentions
-        all_mentions = extract_mentions(body)
+        all_mentions = rank_mentions_by_frequency(body)
 
         # 2. 应用策略过滤
         if all_mentions:
@@ -140,8 +174,10 @@ def post_comment(
             # 3. 清理主体内容（@ → "用户 xxx"）
             body = clean_mentions_in_text(body)
 
-            # 4. 使用过滤后的 mentions
-            mentions = allowed_mentions
+            # 4. 使用过滤后的 mentions（最多 2 个，按出现次数排序）
+            if len(allowed_mentions) > 2:
+                logger.info(f"[FILTER] 仅保留出现次数最多的 2 个 @mentions: {allowed_mentions[:2]}")
+            mentions = allowed_mentions[:2]
         else:
             mentions = []
 
