@@ -2,27 +2,10 @@
 # 集中管理所有 @mention 相关策略
 
 mention_policy:
-  # 模式：permissive（宽松）/ strict（严格）
-  # permissive: 默认允许所有，只过滤黑名单
-  # strict: 默认禁止所有，只允许白名单
-  mode: permissive
-
-  # 系统账号（自动跳过，不触发通知）
-  system_accounts:
-    - github
-    - github-actions
-    - dependabot
-
   # 黑名单：禁止 @ 的用户（即使在正文中提到，也不会在 @ 区域出现）
   blacklist: []
     # - spam-user
     # - bot-account
-
-  # 白名单：仅在 strict 模式下生效
-  # strict 模式时，只有白名单中的用户才能被 @
-  whitelist: []
-    # - gqy20
-    # - gqy22
 
   # 频率限制（暂未实现，预留配置）
   rate_limit:

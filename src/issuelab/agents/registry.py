@@ -67,6 +67,8 @@ def load_registry(agents_dir: Path, include_disabled: bool = False) -> dict[str,
     for user_dir in agents_dir.iterdir():
         if not user_dir.is_dir():
             continue
+        if user_dir.name.startswith("_"):
+            continue
 
         agent_yml = user_dir / "agent.yml"
         if not agent_yml.exists():
