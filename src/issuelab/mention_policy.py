@@ -8,6 +8,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from issuelab.agents.registry import BUILTIN_AGENTS, load_registry
+
 logger = logging.getLogger(__name__)
 
 # 统一的 @mention 匹配规则（支持字母、数字、下划线、连字符）
@@ -39,10 +41,7 @@ def load_mention_policy() -> dict[str, Any]:
 
     # 默认配置
     default_policy = {
-        "mode": "permissive",
-        "system_accounts": ["github", "github-actions", "dependabot"],
         "blacklist": [],
-        "whitelist": [],
         "rate_limit": {
             "enabled": False,
             "max_per_issue": 10,
@@ -72,7 +71,7 @@ def load_mention_policy() -> dict[str, Any]:
             if key not in policy:
                 policy[key] = value
 
-        logger.info(f"[INFO] 加载策略配置: mode={policy['mode']}, blacklist={policy['blacklist']}")
+        logger.info(f"[INFO] 加载策略配置: blacklist={policy['blacklist']}")
         return policy
 
     except ImportError:
@@ -102,40 +101,29 @@ def filter_mentions(mentions: list[str], policy: dict[str, Any] | None = None) -
     if policy is None:
         policy = load_mention_policy()
 
-    mode = policy.get("mode", "permissive")
-    system_accounts = policy.get("system_accounts", [])
     blacklist = policy.get("blacklist", [])
-    whitelist = policy.get("whitelist", [])
 
     allowed = []
     filtered = []
 
+    registry = load_registry(Path("agents"))
+    allowed_agents = {name.lower() for name in BUILTIN_AGENTS} | {name.lower() for name in registry}
+
     for username in mentions:
         username_lower = username.lower()
 
-        # 1. 过滤系统账号
-        if username_lower in [acc.lower() for acc in system_accounts]:
-            logger.debug(f"[FILTER] 系统账号: {username}")
+        # 0. 必须是已注册或内置的 agent
+        if username_lower not in allowed_agents:
+            logger.debug(f"[FILTER] 未注册 agent: {username}")
             filtered.append(username)
             continue
 
-        # 2. 过滤黑名单
+        # 1. 过滤黑名单
         if username_lower in [u.lower() for u in blacklist]:
             logger.debug(f"[FILTER] 黑名单: {username}")
             filtered.append(username)
             continue
-
-        # 3. 根据模式判断
-        if mode == "strict":
-            # strict 模式：只允许白名单
-            if username_lower in [u.lower() for u in whitelist]:
-                allowed.append(username)
-            else:
-                logger.debug(f"[FILTER] 不在白名单: {username}")
-                filtered.append(username)
-        else:
-            # permissive 模式：默认允许（已过滤系统账号和黑名单）
-            allowed.append(username)
+        allowed.append(username)
 
     logger.info(f"[FILTER] 结果: allowed={allowed}, filtered={filtered}")
     return allowed, filtered

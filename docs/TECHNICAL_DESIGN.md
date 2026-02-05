@@ -84,6 +84,8 @@ alice 的 fork 仓库接收触发
 调用 Claude API（使用 alice 的 ANTHROPIC_AUTH_TOKEN）
     ↓
 将结果回复到主仓库 Issue（使用 PAT_TOKEN）
+
+备注：用户输入的 @mention 仅用于触发工作流；Agent 输出中的通知对象统一通过 YAML 的 `mentions` 字段传递，正文不再解析 @mentions。
 ```
 
 ---
@@ -557,7 +559,7 @@ class PaperSearchTool(Tool):
 
 | 操作 | 目标时间 | 当前性能 |
 |------|---------|---------|
-| 解析 @mentions | < 1s | ~0.5s |
+| 解析结构化 mentions | < 1s | ~0.5s |
 | Token 生成 | < 2s/repo | ~1.5s/repo |
 | Dispatch 发送 | < 1s/repo | ~0.8s/repo |
 | Agent 执行 | < 30s | ~10-20s |
@@ -566,7 +568,7 @@ class PaperSearchTool(Tool):
 
 1. **并行处理**：多个 dispatch 并行发送
 2. **缓存**：缓存 registry 配置
-3. **批量操作**：一次请求处理多个 @mentions
+3. **批量操作**：一次请求处理多个 mentions
 4. **异步执行**：Agent 执行不阻塞主流程
 
 ---

@@ -18,7 +18,6 @@ import yaml
 from issuelab.mention_policy import (
     build_mention_section,
     clean_mentions_in_text,
-    extract_mentions,
     filter_mentions,
 )
 
@@ -27,11 +26,11 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "build_mention_section",
     "clean_mentions_in_text",
-    "extract_mentions",
     "filter_mentions",
     "trigger_mentioned_agents",
     "process_agent_response",
     "normalize_comment_body",
+    "extract_mentions_from_yaml",
     "should_auto_close",
     "close_issue",
 ]
@@ -51,6 +50,7 @@ _DEFAULT_FORMAT_RULES = {
         "findings_max_chars": 25,
         "actions_max_count": 2,
         "actions_max_chars": 30,
+        "mentions_max_count": 5,
     },
     "rules": {
         "mentions_only_in_actions": True,
@@ -100,7 +100,40 @@ def _extract_yaml_block(text: str) -> str:
     return match.group(1).strip() if match else ""
 
 
-def _normalize_agent_output(response_text: str, agent_name: str) -> tuple[str, list[str]]:
+def extract_mentions_from_yaml(response_text: str) -> list[str]:
+    yaml_text = _extract_yaml_block(response_text)
+    if not yaml_text:
+        return []
+    try:
+        parsed = yaml.safe_load(yaml_text) or {}
+    except Exception:
+        return []
+    mentions_value = parsed.get("mentions")
+    if not mentions_value:
+        return []
+
+    if isinstance(mentions_value, str):
+        candidates = [mentions_value]
+    elif isinstance(mentions_value, list):
+        candidates = [str(item) for item in mentions_value]
+    else:
+        return []
+
+    normalized: list[str] = []
+    for item in candidates:
+        cleaned = item.strip()
+        if cleaned.startswith("@"):
+            cleaned = cleaned[1:]
+        if not cleaned:
+            continue
+        if not re.fullmatch(r"[a-zA-Z0-9_-]+", cleaned):
+            continue
+        if cleaned not in normalized:
+            normalized.append(cleaned)
+    return normalized
+
+
+def _normalize_agent_output(response_text: str, agent_name: str | None) -> tuple[str, list[str]]:
     warnings: list[str] = []
     rules = _load_format_rules()
     sections = rules["sections"]
@@ -115,7 +148,7 @@ def _normalize_agent_output(response_text: str, agent_name: str) -> tuple[str, l
     # Render YAML-only responses into markdown for user-facing agents.
     if summary_marker not in response_text:
         yaml_text = _extract_yaml_block(response_text)
-        if yaml_text and agent_name not in {"observer", "arxiv_observer", "pubmed_observer"}:
+        if yaml_text and agent_name not in {"arxiv_observer", "pubmed_observer"}:
             try:
                 parsed = yaml.safe_load(yaml_text) or {}
             except Exception:
@@ -223,7 +256,9 @@ def _normalize_agent_output(response_text: str, agent_name: str) -> tuple[str, l
         warnings.append(f"Recommended Actions truncated to {actions_max} bullets")
 
     confidence = "medium"
+    parsed_mentions: list[str] = []
     yaml_text = _extract_yaml_block(yaml_block)
+    parsed = None
     if yaml_text:
         try:
             parsed = yaml.safe_load(yaml_text)
@@ -233,6 +268,7 @@ def _normalize_agent_output(response_text: str, agent_name: str) -> tuple[str, l
             parsed_confidence = str(parsed.get("confidence", "")).lower()
             if parsed_confidence in {"high", "medium", "low"}:
                 confidence = parsed_confidence
+            parsed_mentions = extract_mentions_from_yaml(response_text)
 
     def _yaml_escape(value: str) -> str:
         return value.replace('"', '\\"')
@@ -247,24 +283,32 @@ def _normalize_agent_output(response_text: str, agent_name: str) -> tuple[str, l
     yaml_lines.append("recommendations:")
     for item in actions:
         yaml_lines.append(f'  - "{_yaml_escape(item)}"')
+    if parsed_mentions:
+        mentions_max = int(limits.get("mentions_max_count", 5))
+        yaml_lines.append("mentions:")
+        for item in parsed_mentions[:mentions_max]:
+            yaml_lines.append(f'  - "{_yaml_escape(item)}"')
     yaml_lines.append(f'confidence: "{confidence}"')
     yaml_lines.append("```")
 
-    normalized = [
-        f"[Agent: {agent_name}]",
-        "",
-        summary_marker,
-        summary_line or "(missing)",
-        "",
-        findings_marker,
-        *(f"- {item}" for item in findings),
-        "",
-        actions_marker,
-        *(f"- [ ] {item}" for item in actions),
-        "",
-        yaml_marker,
-        *yaml_lines,
-    ]
+    normalized: list[str] = []
+    if agent_name:
+        normalized.extend([f"[Agent: {agent_name}]", ""])
+    normalized.extend(
+        [
+            summary_marker,
+            summary_line or "(missing)",
+            "",
+            findings_marker,
+            *(f"- {item}" for item in findings),
+            "",
+            actions_marker,
+            *(f"- [ ] {item}" for item in actions),
+            "",
+            yaml_marker,
+            *yaml_lines,
+        ]
+    )
 
     return "\n".join(normalized).rstrip() + "\n", warnings
 
@@ -281,10 +325,12 @@ def _extract_agent_name(response_text: str) -> str:
     return "unknown"
 
 
-def normalize_comment_body(body: str) -> str:
+def normalize_comment_body(body: str, agent_name: str | None = None) -> str:
     if not body:
         return body
-    agent_name = _extract_agent_name(body)
+    if not agent_name:
+        inferred = _extract_agent_name(body)
+        agent_name = inferred if inferred != "unknown" else None
     normalized, _warnings = _normalize_agent_output(body, agent_name)
     rules = _load_format_rules()
     yaml_marker = rules["sections"]["structured"]
@@ -315,7 +361,7 @@ def trigger_mentioned_agents(
     Returns:
         (results, allowed_mentions, filtered_mentions)
     """
-    mentions = extract_mentions(response)
+    mentions = extract_mentions_from_yaml(response)
 
     if not mentions:
         logger.info("[INFO] Response中没有@mentions")
@@ -402,7 +448,7 @@ def process_agent_response(
     response_text = normalized_response
 
     # 提取所有 @mentions（基于原始回复，避免规范化后丢失）
-    mentions = extract_mentions(raw_response_text)
+    mentions = extract_mentions_from_yaml(raw_response_text)
 
     # 清理主体内容（将所有 @username 替换为 "用户 username"）
     clean_response = clean_mentions_in_text(response_text)

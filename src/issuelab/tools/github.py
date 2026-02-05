@@ -132,6 +132,7 @@ def truncate_text(text: str, max_length: int = MAX_COMMENT_LENGTH) -> str:
 def post_comment(
     issue_number: int,
     body: str,
+    agent_name: str | None = None,
     mentions: list[str] | None = None,
     auto_truncate: bool = True,
     auto_clean: bool = True,
@@ -158,16 +159,17 @@ def post_comment(
         是否成功发布
     """
     env = Config.prepare_github_env()
-    from issuelab.response_processor import normalize_comment_body
+    from issuelab.response_processor import extract_mentions_from_yaml, normalize_comment_body
 
-    body = normalize_comment_body(body)
+    raw_body = body
+    body = normalize_comment_body(body, agent_name=agent_name)
 
     # 自动清理和过滤 @mentions（集中式管理的核心）
     if mentions is None and auto_clean:
-        from issuelab.mention_policy import clean_mentions_in_text, filter_mentions, rank_mentions_by_frequency
+        from issuelab.mention_policy import clean_mentions_in_text, filter_mentions
 
-        # 1. 提取所有 @mentions
-        all_mentions = rank_mentions_by_frequency(body)
+        # 1. 只使用结构化 mentions 字段（避免从自由文本误判语义）
+        all_mentions = extract_mentions_from_yaml(raw_body)
 
         # 2. 应用策略过滤
         if all_mentions:

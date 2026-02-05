@@ -462,12 +462,19 @@ uv run python -m issuelab review --issue 1 --post
 # tests/test_response_processor.py
 
 def test_process_agent_response_mentions():
-    """测试处理响应中的 @mentions"""
+    """测试处理响应中的结构化 mentions"""
     from issuelab.response_processor import process_agent_response
 
     result = process_agent_response(
         agent_name="moderator",
-        response="建议 @reviewer_a 进行详细评审",
+        response="""```yaml
+summary: "Test"
+findings: []
+recommendations: []
+mentions:
+  - reviewer_a
+confidence: "high"
+```""",
         issue_number=1,
         issue_title="Test",
         issue_body="Body",
