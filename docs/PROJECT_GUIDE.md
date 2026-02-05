@@ -154,7 +154,6 @@ cp agents/_template/.mcp.json agents/YOUR_USERNAME/.mcp.json
 # 修改 agent.yml 中的配置
 # owner: YOUR_USERNAME
 # repository: YOUR_USERNAME/IssueLab
-# triggers: ["@YOUR_USERNAME"]
 
 # 提交并推送
 git add agents/YOUR_USERNAME/
@@ -209,6 +208,20 @@ agents/your-id/.mcp.json
   }
 }
 ```
+
+### 2.8 Skills / Subagents（可选）
+
+IssueLab 支持在 agent 级别组织 Skills 与 Subagents：
+
+- Skills（项目级）：`.claude/skills/`
+- Skills（每个 agent）：`agents/<your_id>/.claude/skills/`
+- Subagents（项目级）：`.claude/agents/`
+- Subagents（每个 agent）：`agents/<your_id>/.claude/agents/`
+
+**说明：**
+- Skills 通过 `Skill` 工具触发（已在 SDK 选项启用）
+- Subagents 通过 `Task` 工具调用（已在 SDK 选项启用）
+- Subagent 不能再调用 Subagent（不应包含 `Task`）
 
 ---
 
@@ -320,6 +333,8 @@ agents/your-id/.mcp.json
 ```yaml
 name: your_username
 description: 简短描述你的 agent
+owner: your_username
+repository: your_username/IssueLab
 
 # 感兴趣的话题（用于自动扫描）
 interests:
@@ -327,21 +342,15 @@ interests:
   - keyword2
   - keyword3
 
-# 专业领域
-expertise:
-  - domain1
-  - domain2
+# 运行配置（可选）
+max_turns: 30
+max_budget_usd: 10.00
+timeout_seconds: 180
 
-# 作者信息
-author:
-  name: Your Name
-  github: your_username
-  email: your@email.com
-
-# 可选配置
-options:
-  max_tokens: 4000
-  temperature: 0.7
+# 功能开关（可选）
+enable_skills: true
+enable_subagents: true
+enable_mcp: true
 ```
 
 ### 4.2 Prompt 编写指南

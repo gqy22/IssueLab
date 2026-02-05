@@ -11,8 +11,7 @@ interests:                      # 可选：个人兴趣关键词（用于 person
   - "machine learning"
   - "systems"
 
-# 智能体类型和描述
-type: reviewer                   # 必需：类型，可选值：moderator, reviewer, summarizer
+# 智能体描述
 description: "这是我的智能体，专注于..."  # 必需：智能体描述
 
 # 触发条件
