@@ -194,6 +194,7 @@ async def run_agents_parallel(
     context: str = "",
     comment_count: int = 0,
     available_agents: list[dict] | None = None,
+    trigger_comment: str | None = None,
 ) -> dict:
     """并行运行多个代理
 
@@ -228,6 +229,13 @@ async def run_agents_parallel(
 
     # 构建任务上下文（Issue 信息）
     task_context = context
+    if trigger_comment:
+        task_context = (
+            "## 最新触发评论（最高优先级）\n"
+            f"{trigger_comment}\n\n"
+            "---\n\n"
+            f"{task_context}"
+        )
     if comment_count > 0:
         task_context += f"\n\n**重要提示**: 本 Issue 已有 {comment_count} 条历史评论。请仔细阅读并分析这些评论。"
 

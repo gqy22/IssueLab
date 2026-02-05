@@ -189,6 +189,7 @@ jobs:
           CLAUDE_CODE_STREAM_CLOSE_TIMEOUT: "30000"
           MCP_LOG_DETAIL: "1"
           PROMPT_LOG: "1"
+          ISSUELAB_TRIGGER_COMMENT: ${{ github.event.comment.body }}
 
       - name: Comment on dispatch failure
         if: steps.dispatch.outcome == 'failure' && steps.dispatch.outputs.dispatched_count == '0'

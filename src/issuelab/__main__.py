@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import json
+import os
 import subprocess
 
 from issuelab.agents.discovery import discover_agents, get_agent_matrix_markdown
@@ -146,7 +147,8 @@ def main():
 
         print(f"[START] 执行 agents: {agents}")
 
-        results = asyncio.run(run_agents_parallel(args.issue, agents, context, comment_count))
+        trigger_comment = os.environ.get("ISSUELAB_TRIGGER_COMMENT", "")
+        results = asyncio.run(run_agents_parallel(args.issue, agents, context, comment_count, trigger_comment=trigger_comment))
 
         # 输出结果
         for agent_name, result in results.items():
@@ -168,7 +170,8 @@ def main():
     elif args.command == "review":
         # 顺序执行：moderator -> reviewer_a -> reviewer_b -> summarizer
         agents = ["moderator", "reviewer_a", "reviewer_b", "summarizer"]
-        results = asyncio.run(run_agents_parallel(args.issue, agents, context, comment_count))
+        trigger_comment = os.environ.get("ISSUELAB_TRIGGER_COMMENT", "")
+        results = asyncio.run(run_agents_parallel(args.issue, agents, context, comment_count, trigger_comment=trigger_comment))
 
         for agent_name, result in results.items():
             response = result.get("response", str(result))
@@ -444,7 +447,8 @@ def main():
 
         # 执行agent
         print(f"[START] 使用 {args.agent} 分析 {args.repo}#{args.issue}")
-        results = asyncio.run(run_agents_parallel(args.issue, [args.agent], context, 0, available_agents))
+        trigger_comment = os.environ.get("ISSUELAB_TRIGGER_COMMENT", "")
+        results = asyncio.run(run_agents_parallel(args.issue, [args.agent], context, 0, available_agents, trigger_comment=trigger_comment))
 
         if args.agent not in results:
             print(f"[ERROR] Agent {args.agent} 执行失败")

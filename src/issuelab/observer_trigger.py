@@ -134,7 +134,8 @@ def trigger_local_user_agent(username: str, issue_number: int, issue_title: str,
             context += f"\n\n**本 Issue 共有 {comment_count} 条历史评论：**\n\n{comments}"
 
         # 本地执行agent
-        results = asyncio.run(run_agents_parallel(issue_number, [username], context, comment_count))
+        trigger_comment = os.environ.get("ISSUELAB_TRIGGER_COMMENT", "")
+        results = asyncio.run(run_agents_parallel(issue_number, [username], context, comment_count, trigger_comment=trigger_comment))
 
         if username not in results:
             logger.error(f"[ERROR] Agent {username} 执行失败")
