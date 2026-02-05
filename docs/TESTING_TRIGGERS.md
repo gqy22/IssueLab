@@ -114,7 +114,6 @@ for t in tests:
 - `@reviewer_b`
 - `@summarizer`
 
-注意：当前不支持别名映射（仅支持真名）。
 
 ---
 
