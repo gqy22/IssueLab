@@ -34,31 +34,10 @@ def match_triggers(mentions: list[str], registry: dict[str, dict[str, Any]]) -> 
     matched_users = set()
 
     for mention in mentions:
-        # 直接匹配用户名
-        if mention in registry:
-            config = registry[mention]
-            triggers = config.get("triggers", [])
-            if not triggers:
-                triggers = [f"@{mention}"]
-
-            # 检查是否在触发列表中
-            if f"@{mention}" in triggers and mention not in matched_users:
-                matched.append(config)
-                matched_users.add(mention)
-                continue
-
-        # 检查所有用户的触发条件
-        for username, config in registry.items():
-            if username in matched_users:
-                continue
-
-            triggers = config.get("triggers", [])
-            if not triggers:
-                triggers = [f"@{username}"]
-            if f"@{mention}" in triggers:
-                matched.append(config)
-                matched_users.add(username)
-                break
+        # 直接匹配用户名（@owner 即触发）
+        if mention in registry and mention not in matched_users:
+            matched.append(registry[mention])
+            matched_users.add(mention)
 
     return matched
 

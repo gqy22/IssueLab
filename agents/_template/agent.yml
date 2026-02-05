@@ -15,12 +15,16 @@ interests:                      # 可选：个人兴趣关键词（用于 person
 type: reviewer                   # 必需：类型，可选值：moderator, reviewer, summarizer
 description: "这是我的智能体，专注于..."  # 必需：智能体描述
 
-# 触发条件（可选，默认使用 @owner）
-triggers:                        # 可选：触发条件列表
-  - "@your-github-id"            # @mention 触发（默认与 GitHub 用户名一致）
+# 触发条件
+# - @mention：在 Issue 或评论中 @你的 GitHub 用户名即可触发
 
 # 运行配置
 enabled: true                    # 可选：是否启用，默认 true
+
+# 对话配置（可选）
+max_turns: 30                    # 可选：最大对话轮数
+max_budget_usd: 10.00            # 可选：最大消耗金额（美元）
+timeout_seconds: 180             # 可选：单次运行超时（秒）
 
 # 仓库配置（重要：必须修改为你自己的 fork 仓库）
 repository: "your-github-id/IssueLab"  # 必需：你的 fork 仓库
@@ -66,8 +70,7 @@ workflow_file: user_agent.yml      # 可选：workflow_dispatch 模式时指定�
 #    - summarizer：总结员，汇总讨论内容
 #
 # 3. 触发条件：
-#    - @mention：在 Issue 或评论中 @你的 GitHub 用户名
-#    - 如不填写 triggers，系统默认使用 @owner 作为触发条件
+#    - @mention：在 Issue 或评论中 @你的 GitHub 用户名即可触发
 #
 # 4. 重要：repository 字段
 #    - 必须设置为你自己的 fork 仓库（例如：your-github-id/IssueLab）

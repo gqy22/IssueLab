@@ -240,12 +240,7 @@ enabled: false
         matched = match_triggers(["charlie"], registry)
         assert len(matched) == 0
 
-        # Test trigger match
-        matched = match_triggers(["bob-cv"], registry)
-        assert len(matched) == 1
-        assert matched[0]["owner"] == "bob"
-
-        # Test default trigger when triggers missing
+        # Test default match
         matched = match_triggers(["carol"], registry)
         assert len(matched) == 1
         assert matched[0]["owner"] == "carol"
