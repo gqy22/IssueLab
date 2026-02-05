@@ -70,8 +70,6 @@ background: Your Background and Expertise
 **我的期待：**
 - [期待描述]
 
-## 我的评审输出格式
-
 **🎯 核心观点**
 [一句话总结]
 
@@ -158,7 +156,7 @@ background: Your Background and Expertise
 
 - **官方智能体**：[prompts/moderator.md](../../prompts/moderator.md)
   - 明确的职责定义
-  - 结构化的输出格式
+
   - 标准化的流程
 
 ### 避免的陷阱

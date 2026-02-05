@@ -1,0 +1,19 @@
+version: 1
+description: Paper recommendation response schema for arxiv_observer/pubmed_observer
+
+output:
+  type: yaml
+  required_fields:
+    - analysis
+    - recommended
+
+recommended_item_fields:
+  - index
+  - title
+  - reason
+  - summary
+
+notes:
+  - analysis should describe how many papers were reviewed and why items were selected
+  - recommended must be a list of objects with the fields above
+  - index must be within the input list range

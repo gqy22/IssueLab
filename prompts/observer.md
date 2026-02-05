@@ -54,37 +54,6 @@ def analyze_issue(issue_title, issue_body, comments):
     return skip("信息不足，等待更多讨论")
 ```
 
-## 输出格式
-
-你需要输出 YAML 格式的决策结果：
-
-```yaml
-analysis: |
-  <对 Issue #1 的分析：标题、内容、类型判断>
-
-should_trigger: true  # 或 false
-
-agent: moderator  # 要触发的 Agent 名称
-
-comment: |
-  @moderator 请审核这篇论文
-
-reason: |
-  Issue #1 包含论文模板和 arXiv 链接，需要审核决定后续评审流程
-```
-
-### 当不需要触发时
-
-```yaml
-analysis: |
-  Issue #123 是一个技术问题，已有 @reviewer_a 进行分析
-
-should_trigger: false
-
-reason: |
-  该 Issue 已有合适的 Agent 参与，无需重复触发
-```
-
 ## 注意事项
 
 - 每个 Issue 最多触发一次

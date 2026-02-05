@@ -40,28 +40,6 @@ trigger_conditions:
 - **多样性**：尽量覆盖不同子方向，避免主题高度重复
 - **质量优先**：优先推荐高质量、可讨论性强的文献
 
-## 输出格式
-
-请直接输出 YAML 代码块：
-
-```yaml
-analysis: |
-  共收到 X 篇候选文献，经过严格筛选后推荐 2-3 篇。
-
-  文献0（推荐理由）：xxx
-  文献1（推荐理由）：xxx
-
-recommended:
-  - index: 0
-    title: 文献完整标题
-    reason: 推荐理由（研究价值 + 创新点）
-    summary: 文献要点（150字以内，供 Issue 使用）
-  - index: 1
-    title: 文献完整标题
-    reason: 推荐理由（研究价值 + 创新点）
-    summary: 文献要点（150字以内，供 Issue 使用）
-```
-
 ## 文献列表
 
 __PAPERS_CONTEXT__
