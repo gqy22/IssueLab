@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 from typing import Literal
 
-from issuelab.config import prepare_github_env
+from issuelab.config import Config
 from issuelab.logging_config import get_logger
 from issuelab.retry import retry_sync
 
@@ -29,7 +29,7 @@ def get_issue_info(issue_number: int, format_comments: bool = False) -> dict:
         如果 format_comments=True，comments 为格式化字符串，否则为原始列表
     """
     logger.debug(f"获取 Issue #{issue_number} 信息")
-    env = prepare_github_env()
+    env = Config.prepare_github_env()
 
     result = subprocess.run(
         ["gh", "issue", "view", str(issue_number), "--json", "number,title,body,labels,comments"],
@@ -154,7 +154,7 @@ def post_comment(
     Returns:
         是否成功发布
     """
-    env = prepare_github_env()
+    env = Config.prepare_github_env()
 
     # 自动清理和过滤 @mentions（集中式管理的核心）
     if mentions is None and auto_clean:
@@ -231,7 +231,7 @@ def update_label(issue_number: int, label: str, action: Literal["add", "remove"]
         是否成功更新
     """
     action_flag = "--add-label" if action == "add" else "--remove-label"
-    env = prepare_github_env()
+    env = Config.prepare_github_env()
 
     result = subprocess.run(
         ["gh", "issue", "edit", str(issue_number), action_flag, label],

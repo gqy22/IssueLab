@@ -62,12 +62,12 @@ uv run pytest tests/test_cli.py -v              # CLI 命令测试
 
 def test_parse_single_mention():
     """测试解析单个 @mention"""
-    result = parse_mentions("@moderator 请审核")
+    result = parse_agent_mentions("@moderator 请审核")
     assert result == ["moderator"]
 
 def test_parse_multiple_mentions():
     """测试解析多个 @mention"""
-    result = parse_mentions("@moderator 审核，@reviewer_a 评审")
+    result = parse_agent_mentions("@moderator 审核，@reviewer_a 评审")
     assert result == ["moderator", "reviewer_a"]
 
 def test_parse_name_mappings():

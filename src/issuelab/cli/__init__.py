@@ -3,12 +3,8 @@
 from .mentions import main as parse_mentions_main
 from .mentions import parse_github_mentions
 
-# 向后兼容接口
-parse_mentions = parse_github_mentions
-
 __all__ = [
     "parse_github_mentions",
-    "parse_mentions",  # 向后兼容
     "parse_mentions_main",
 ]
 

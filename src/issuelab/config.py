@@ -84,18 +84,3 @@ class Config:
         log_file = os.environ.get("LOG_FILE")
         return Path(log_file) if log_file else None
 
-
-# 便捷函数（向后兼容）
-def get_github_token() -> str:
-    """便捷函数：获取 GitHub Token"""
-    return Config.get_github_token()
-
-
-def prepare_github_env() -> dict:
-    """便捷函数：准备 GitHub 环境变量"""
-    return Config.prepare_github_env()
-
-
-def get_anthropic_env() -> dict:
-    """便捷函数：获取 Anthropic 环境变量"""
-    return Config.get_anthropic_env()

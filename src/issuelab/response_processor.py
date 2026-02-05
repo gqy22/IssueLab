@@ -9,7 +9,7 @@ Agent Response 后处理：解析 @mentions 并触发 dispatch
 import logging
 import os
 import subprocess
-from typing import Any, Literal, overload
+from typing import Any
 
 from issuelab.mention_policy import (
     build_mention_section,
@@ -21,39 +21,13 @@ from issuelab.mention_policy import (
 logger = logging.getLogger(__name__)
 
 
-@overload
 def trigger_mentioned_agents(
     response: str,
     issue_number: int,
     issue_title: str,
     issue_body: str,
     policy: dict | None = None,
-    *,
-    return_details: Literal[False] = False,
-) -> dict[str, bool]: ...
-
-
-@overload
-def trigger_mentioned_agents(
-    response: str,
-    issue_number: int,
-    issue_title: str,
-    issue_body: str,
-    policy: dict | None = None,
-    *,
-    return_details: Literal[True],
-) -> tuple[dict[str, bool], list[str], list[str]]: ...
-
-
-def trigger_mentioned_agents(
-    response: str,
-    issue_number: int,
-    issue_title: str,
-    issue_body: str,
-    policy: dict | None = None,
-    *,
-    return_details: bool = False,
-) -> dict[str, bool] | tuple[dict[str, bool], list[str], list[str]]:
+    ) -> tuple[dict[str, bool], list[str], list[str]]:
     """
     解析agent response中的@mentions，应用策略过滤，并触发允许的agent
 
@@ -65,14 +39,13 @@ def trigger_mentioned_agents(
         policy: @ 策略配置（None 则自动加载）
 
     Returns:
-        默认返回触发结果字典 {username: success}，以保持向后兼容。
-        当 return_details=True 时返回 (results, allowed_mentions, filtered_mentions) 元组。
+        (results, allowed_mentions, filtered_mentions)
     """
     mentions = extract_mentions(response)
 
     if not mentions:
         logger.info("[INFO] Response中没有@mentions")
-        return ({}, [], []) if return_details else {}
+        return {}, [], []
 
     logger.info(f"[INFO] 发现 {len(mentions)} 个@mentions: {mentions}")
 
@@ -84,7 +57,7 @@ def trigger_mentioned_agents(
 
     if not allowed_mentions:
         logger.info("[INFO] 没有允许的@mentions")
-        return ({}, [], filtered_mentions) if return_details else {}
+        return {}, [], filtered_mentions
 
     logger.info(f"[INFO] 允许触发 {len(allowed_mentions)} 个@mentions: {allowed_mentions}")
 
@@ -106,7 +79,7 @@ def trigger_mentioned_agents(
         else:
             logger.error(f"[ERROR] 触发 {username} 失败")
 
-    return (results, allowed_mentions, filtered_mentions) if return_details else results
+    return results, allowed_mentions, filtered_mentions
 
 
 def process_agent_response(
@@ -167,16 +140,9 @@ def process_agent_response(
     # 自动触发被@的agents
     if auto_dispatch and mentions:
         logger.info(f"🔗 {agent_name} 的response中@了 {len(mentions)} 个用户")
-        trigger_result = trigger_mentioned_agents(
-            response_text, issue_number, issue_title, issue_body, return_details=True
+        dispatch_results, allowed_mentions, filtered_mentions = trigger_mentioned_agents(
+            response_text, issue_number, issue_title, issue_body
         )
-
-        if isinstance(trigger_result, tuple) and len(trigger_result) == 3:
-            dispatch_results, allowed_mentions, filtered_mentions = trigger_result
-        else:
-            dispatch_results = trigger_result
-            allowed_mentions = list(dispatch_results.keys())
-            filtered_mentions = []
         result["dispatch_results"] = dispatch_results
         result["allowed_mentions"] = allowed_mentions
         result["filtered_mentions"] = filtered_mentions
