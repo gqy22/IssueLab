@@ -162,6 +162,8 @@ jobs:
           ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL || 'https://api.minimaxi.com/anthropic' }}
           ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL || 'MiniMax-M2.1' }}
+          MCP_LOG_DETAIL: "1"
+          PROMPT_LOG: "1"
 
       - name: Reply to selected issues
         if: steps.analyze.outputs.selected_count > 0
@@ -193,6 +195,8 @@ jobs:
           ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
           ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL || 'https://api.minimaxi.com/anthropic' }}
           ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL || 'MiniMax-M2.1' }}
+          MCP_LOG_DETAIL: "1"
+          PROMPT_LOG: "1"
 
       - uses: actions/upload-artifact@v4
         with:

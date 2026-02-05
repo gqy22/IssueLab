@@ -72,6 +72,8 @@ jobs:
           GITHUB_APP_PRIVATE_KEY: ${{ secrets.ISSUELAB_APP_PRIVATE_KEY }}
           LOG_FILE: ${{ github.workspace }}/logs/observer_${{ github.run_id }}.log
           LOG_LEVEL: DEBUG
+          MCP_LOG_DETAIL: "1"
+          PROMPT_LOG: "1"
 
       - uses: actions/upload-artifact@v4
         with:

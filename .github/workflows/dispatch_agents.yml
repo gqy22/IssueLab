@@ -187,6 +187,8 @@ jobs:
           LOG_LEVEL: DEBUG
           CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK: "true"
           CLAUDE_CODE_STREAM_CLOSE_TIMEOUT: "30000"
+          MCP_LOG_DETAIL: "1"
+          PROMPT_LOG: "1"
 
       - name: Comment on dispatch failure
         if: steps.dispatch.outcome == 'failure' && steps.dispatch.outputs.dispatched_count == '0'

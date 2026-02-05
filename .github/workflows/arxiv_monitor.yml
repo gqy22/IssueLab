@@ -32,6 +32,8 @@ env:
   GH_TOKEN: ${{ secrets.PAT_TOKEN }}
   # 启用 DEBUG 日志以显示 Agent 完整执行过程
   LOG_LEVEL: DEBUG
+  MCP_LOG_DETAIL: "1"
+  PROMPT_LOG: "1"
   # Anthropic API 配置
   ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
   ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL || 'https://api.minimaxi.com/anthropic' }}

@@ -4,6 +4,7 @@
 """
 
 import anyio
+import os
 from claude_agent_sdk import (
     AssistantMessage,
     ResultMessage,
@@ -48,6 +49,9 @@ async def run_single_agent(prompt: str, agent_name: str) -> dict:
         "tool_calls": [],
         "local_id": "",
         "text_blocks": [],
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
     }
 
     async def _query_agent():
@@ -123,10 +127,17 @@ async def run_single_agent(prompt: str, agent_name: str) -> dict:
                 session_id = message.session_id or ""
                 cost_usd = message.total_cost_usd or 0.0
                 result_turns = message.num_turns or turn_count
+                usage = message.usage or {}
+                input_tokens = int(usage.get("input_tokens") or 0)
+                output_tokens = int(usage.get("output_tokens") or 0)
+                total_tokens = int(usage.get("total_tokens") or (input_tokens + output_tokens))
 
                 execution_info["session_id"] = session_id
                 execution_info["cost_usd"] = cost_usd
                 execution_info["num_turns"] = result_turns
+                execution_info["input_tokens"] = input_tokens
+                execution_info["output_tokens"] = output_tokens
+                execution_info["total_tokens"] = total_tokens
 
                 # 只在第一次收到 ResultMessage 时记录
                 if first_result:
@@ -134,9 +145,12 @@ async def run_single_agent(prompt: str, agent_name: str) -> dict:
                     first_result = False
 
                 # 日志记录成本和统计
-                logger.info(
+                stats_line = (
                     f"[{agent_name}] [Stats] 成本: ${cost_usd:.4f}, 轮数: {result_turns}, 工具调用: {len(tool_calls)}"
                 )
+                if input_tokens or output_tokens or total_tokens:
+                    stats_line += f", 输入Token: {input_tokens}, 输出Token: {output_tokens}, 总Token: {total_tokens}"
+                logger.info(stats_line)
 
         result = "\n".join(response_text)
         return result
@@ -151,7 +165,10 @@ async def run_single_agent(prompt: str, agent_name: str) -> dict:
             f"响应长度: {len(response)} 字符, "
             f"成本: ${execution_info['cost_usd']:.4f}, "
             f"轮数: {execution_info['num_turns']}, "
-            f"工具调用: {len(execution_info['tool_calls'])}"
+            f"工具调用: {len(execution_info['tool_calls'])}, "
+            f"输入Token: {execution_info['input_tokens']}, "
+            f"输出Token: {execution_info['output_tokens']}, "
+            f"总Token: {execution_info['total_tokens']}"
         )
 
         return execution_info
@@ -289,6 +306,11 @@ async def run_agents_parallel(
 - 专注于 Issue 的讨论话题和内容
 - 不要去分析项目代码或架构（除非 Issue 明确要求）
 """
+        if os.environ.get("PROMPT_LOG") == "1":
+            max_len = 2000
+            preview = final_prompt[:max_len]
+            suffix = "..." if len(final_prompt) > max_len else ""
+            logger.debug(f"[{agent_name}] [Prompt] length={len(final_prompt)}\\n{preview}{suffix}")
 
         result = await run_single_agent(final_prompt, agent_name)
         results[agent_name] = result

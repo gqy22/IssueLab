@@ -5,9 +5,9 @@
 
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from pathlib import Path
 from typing import Any
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 
 from claude_agent_sdk import AgentDefinition, ClaudeAgentOptions
 
@@ -113,6 +113,64 @@ def format_mcp_servers_for_prompt(agent_name: str | None, root_dir: Path | None 
     return "\n".join(lines)
 
 
+def _run_async_in_thread(coro, timeout_ms: int) -> Any:
+    """在独立线程中运行 async 任务，避免与当前事件循环冲突"""
+    timeout_sec = max(timeout_ms, 0) / 1000.0
+
+    def _runner():
+        import anyio
+        async def _async_runner():
+            return await coro
+
+        return anyio.run(_async_runner)
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(_runner)
+        try:
+            return future.result(timeout=timeout_sec if timeout_sec > 0 else None)
+        except FutureTimeoutError as exc:
+            raise TimeoutError(f"async task timeout after {timeout_ms}ms") from exc
+
+
+async def _list_tools_stdio(server_name: str, cfg: dict[str, Any]) -> list[str]:
+    """通过 MCP stdio 连接列出工具"""
+    from mcp import ClientSession
+    from mcp.client.stdio import StdioServerParameters, stdio_client
+
+    params = StdioServerParameters(
+        command=cfg.get("command", ""),
+        args=cfg.get("args", []) or [],
+        env=cfg.get("env"),
+        cwd=cfg.get("cwd"),
+    )
+
+    async with stdio_client(params) as (read_stream, write_stream):
+        session = ClientSession(read_stream, write_stream)
+        await session.initialize()
+        result = await session.list_tools()
+        tools = result.tools or []
+        return [t.name for t in tools if getattr(t, "name", None)]
+
+
+def _list_tools_for_mcp_server(server_name: str, cfg: dict[str, Any], timeout_ms: int) -> list[str]:
+    """列出单个 MCP server 的工具（目前仅支持 stdio）"""
+    if not isinstance(cfg, dict):
+        return []
+
+    if "command" not in cfg:
+        logger.debug("Skip MCP tool listing for '%s': non-stdio server", server_name)
+        return []
+
+    try:
+        return _run_async_in_thread(_list_tools_stdio(server_name, cfg), timeout_ms=timeout_ms)
+    except TimeoutError as exc:
+        logger.warning("List tools timeout for MCP server '%s': %s", server_name, exc)
+        return []
+    except Exception as exc:  # pragma: no cover - best effort
+        logger.warning("List tools failed for MCP server '%s': %s", server_name, exc)
+        return []
+
+
 def _mcp_cache_key(servers: dict[str, Any]) -> str:
     """生成 MCP 配置的稳定缓存键"""
     if not servers:
@@ -166,6 +224,8 @@ def _create_agent_options_impl(
     allowed_tools = base_tools[:]
     if mcp_servers:
         allowed_tools.extend([f"mcp__{name}__*" for name in mcp_servers])
+    if os.environ.get("MCP_LOG_DETAIL") == "1":
+        logger.debug("Allowed tools for agent '%s': %s", agent_name or "default", allowed_tools)
 
     return ClaudeAgentOptions(
         agents=agent_definitions,
@@ -214,6 +274,18 @@ def create_agent_options(
         logger.info("MCP servers loaded for agent '%s': %s", agent_name or "default", server_names)
     else:
         logger.info("No MCP servers configured for agent '%s'", agent_name or "default")
+
+    if os.environ.get("MCP_LOG_DETAIL") == "1":
+        logger.debug("MCP servers detail for agent '%s': %s", agent_name or "default", mcp_servers)
+
+    if os.environ.get("MCP_LOG_TOOLS") == "1" and mcp_servers:
+        timeout_ms = int(os.environ.get("MCP_LIST_TOOLS_TIMEOUT_MS", "3000"))
+        for name, cfg in mcp_servers.items():
+            tools = _list_tools_for_mcp_server(name, cfg, timeout_ms=timeout_ms)
+            if tools:
+                logger.info("MCP tools for '%s': %s", name, ", ".join(sorted(tools)))
+            else:
+                logger.info("MCP tools for '%s': (none or unavailable)", name)
     cache_key = (effective_max_turns, effective_max_budget, agent_name or "", _mcp_cache_key(mcp_servers))
 
     # 检查缓存

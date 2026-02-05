@@ -36,6 +36,8 @@ env:
   MAX_PAPERS: ${{ github.event.inputs.max_papers || '20' }}
   GH_TOKEN: ${{ secrets.PAT_TOKEN }}
   LOG_LEVEL: DEBUG
+  MCP_LOG_DETAIL: "1"
+  PROMPT_LOG: "1"
   PUBMED_EMAIL: ${{ secrets.PUBMED_EMAIL }}
   # Anthropic API 配置
   ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}

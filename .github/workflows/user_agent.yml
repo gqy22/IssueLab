@@ -99,6 +99,7 @@ jobs:
           LOG_LEVEL: DEBUG
           CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK: "true"
           MCP_LOG_DETAIL: "1"
+          PROMPT_LOG: "1"
         run: |
           echo "Running agent for: ${{ steps.agent.outputs.username }}"
           echo "Source Issue: ${{ inputs.source_repo }}#${{ inputs.issue_number }}"

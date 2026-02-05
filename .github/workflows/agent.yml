@@ -76,6 +76,8 @@ jobs:
           CLAUDE_CODE_STREAM_CLOSE_TIMEOUT: "30000"
           ACTIONS_STEP_DEBUG: "true"
           ACTIONS_RUNNER_DEBUG: "true"
+          MCP_LOG_DETAIL: "1"
+          PROMPT_LOG: "1"
 
       - uses: actions/upload-artifact@v4
         with:
