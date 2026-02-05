@@ -202,6 +202,41 @@ class TestMcpConfigLoading:
                     mock_list.assert_called()
 
 
+class TestSubagents:
+    """测试 per-agent subagents 机制"""
+
+    def test_per_agent_subagent_loaded_without_task(self, tmp_path):
+        """subagent 应加载且不包含 Task 工具"""
+        from issuelab.agents.options import create_agent_options
+
+        # 创建 agents 目录结构
+        agents_dir = tmp_path / "agents" / "gqy20" / ".claude" / "agents"
+        agents_dir.mkdir(parents=True)
+        (agents_dir / "literature-triage.md").write_text(
+            "---\n"
+            "agent: literature-triage\n"
+            "description: test subagent\n"
+            "tools:\n"
+            "  - Read\n"
+            "  - Task\n"
+            "---\n\n"
+            "# Triage\n"
+            "Content",
+            encoding="utf-8",
+        )
+
+        # patch AGENTS_DIR to point to tmp agents root
+        with patch("issuelab.agents.options.AGENTS_DIR", tmp_path / "agents"):
+            with patch("issuelab.agents.options.discover_agents") as mock_discover:
+                mock_discover.return_value = {}
+                options = create_agent_options(agent_name="gqy20")
+
+        assert "literature-triage" in options.agents
+        subagent = options.agents["literature-triage"]
+        assert "Task" not in subagent.tools
+        assert "Task" in options.allowed_tools
+
+
 class TestEnvOptimization:
     """测试环境变量优化"""
 

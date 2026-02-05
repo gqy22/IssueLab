@@ -123,7 +123,8 @@ def _get_agent_cwd(agent_name: str | None, root_dir: Path | None = None) -> Path
 
     agent_root = root / "agents" / agent_name
     agent_skills = agent_root / ".claude" / "skills"
-    if agent_skills.exists():
+    agent_subagents = agent_root / ".claude" / "agents"
+    if agent_skills.exists() or agent_subagents.exists():
         return agent_root
 
     return root
