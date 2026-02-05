@@ -40,28 +40,6 @@ trigger_conditions:
 - **多样性**：优先选择不同方向的论文，避免主题重复
 - **质量优先**：宁可推荐 2 篇高质量，不推荐低质量论文
 
-## 输出格式
-
-请直接输出 YAML 代码块：
-
-```yaml
-analysis: |
-  共收到 X 篇候选论文，经过严格筛选后推荐 1-2 篇。
-
-  论文0（推荐理由）：xxx
-  论文1（推荐理由）：xxx
-
-recommended:
-  - index: 0
-    title: 论文完整标题
-    reason: 推荐理由（研究方向热度 + 创新点）
-    summary: 论文摘要（150字以内，供 Issue 使用）
-  - index: 1
-    title: 论文完整标题
-    reason: 推荐理由（研究方向热度 + 创新点）
-    summary: 论文摘要（150字以内，供 Issue 使用）
-```
-
 ## 论文列表
 
 __PAPERS_CONTEXT__

@@ -420,10 +420,18 @@ def _create_agent_options_impl(
     if os.environ.get("MCP_LOG_DETAIL") == "1":
         logger.debug("Allowed tools for agent '%s': %s", agent_name or "default", allowed_tools)
 
+    if agent_name == "observer":
+        output_format_rules = "Follow response format rules in config/observer_response_format.yml."
+    elif agent_name in {"arxiv_observer", "pubmed_observer"}:
+        output_format_rules = "Follow response format rules in config/papers_recommendation_format.yml."
+    else:
+        output_format_rules = "Follow response format rules in config/response_format.yml."
+
     return ClaudeAgentOptions(
         agents=agent_definitions,
         max_turns=max_turns if max_turns is not None else AgentConfig().max_turns,
         max_budget_usd=max_budget_usd if max_budget_usd is not None else AgentConfig().max_budget_usd,
+        system_prompt={"type": "preset", "preset": "claude_code", "append": output_format_rules},
         setting_sources=["user", "project"],
         env=env,
         permission_mode="bypassPermissions",

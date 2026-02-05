@@ -158,6 +158,9 @@ def post_comment(
         是否成功发布
     """
     env = Config.prepare_github_env()
+    from issuelab.response_processor import normalize_comment_body
+
+    body = normalize_comment_body(body)
 
     # 自动清理和过滤 @mentions（集中式管理的核心）
     if mentions is None and auto_clean:

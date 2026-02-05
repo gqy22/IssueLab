@@ -24,17 +24,3 @@ trigger_conditions:
 2. 📝 简要总结 Issue 标题和编号
 3. ⏰ 当前时间戳
 4. 🎯 测试状态：成功
-
-## 输出格式
-
-```markdown
-✅ **测试成功**
-
-- Issue: #{{issue_number}} - {{issue_title}}
-- 时间: {{current_time}}
-- 状态: Workflow 运行正常
-
-测试完成！所有系统正常运行。
-```
-
-**重要**: 保持回复简短（3-5行），避免复杂分析。这是测试 agent，不是实际的工作 agent。
