@@ -67,8 +67,8 @@ class TestAgentConfig:
     def test_agent_config_defaults(self):
         """AgentConfig 应该有合理的默认值"""
         config = AgentConfig()
-        assert config.max_turns == 15
-        assert config.max_budget_usd == 0.50
+        assert config.max_turns == 30
+        assert config.max_budget_usd == 10.00
         assert config.timeout_seconds == 180
 
     def test_agent_config_custom_values(self):
@@ -125,12 +125,12 @@ class TestCreateAgentOptionsWithTimeout:
     def test_create_agent_options_uses_default_max_turns(self):
         """create_agent_options 应该使用默认的 max_turns"""
         options = create_agent_options()
-        assert options.max_turns == 15  # 默认值
+        assert options.max_turns == 30  # 默认值
 
     def test_create_agent_options_uses_default_max_budget_usd(self):
         """create_agent_options 应该使用默认的 max_budget_usd"""
         options = create_agent_options()
-        assert options.max_budget_usd == 0.50  # 默认值
+        assert options.max_budget_usd == 10.00  # 默认值
 
 
 class TestMcpConfigLoading:

@@ -99,6 +99,12 @@ MCP tools can be configured globally or per-agent:
 - Template: `agents/_template/.mcp.json`
 - Prompt placeholder: `{mcp_servers}` in prompt.md shows loaded MCP list
 
+### Skills / Subagents
+
+- Skills path: `.claude/skills/` (project) or `agents/<name>/.claude/skills/` (per-agent)
+- Subagents path: `.claude/agents/` (project) or `agents/<name>/.claude/agents/` (per-agent)
+- Subagents are invoked via the `Task` tool (enabled in options)
+
 ## Environment Variables
 
 | Variable | Purpose | Default |
@@ -116,9 +122,9 @@ MCP tools can be configured globally or per-agent:
 
 ```python
 SCENE_CONFIGS = {
-    "quick": AgentConfig(max_turns=10, max_budget_usd=0.20, timeout_seconds=60),
-    "review": AgentConfig(max_turns=25, max_budget_usd=0.50, timeout_seconds=180),
-    "deep": AgentConfig(max_turns=25, max_budget_usd=1.00, timeout_seconds=300),
+    "quick": AgentConfig(max_turns=20, max_budget_usd=0.20, timeout_seconds=60),
+    "review": AgentConfig(max_turns=50, max_budget_usd=10.00, timeout_seconds=180),
+    "deep": AgentConfig(max_turns=50, max_budget_usd=10.00, timeout_seconds=300),
 }
 ```
 

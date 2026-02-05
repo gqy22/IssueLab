@@ -124,6 +124,16 @@ uv sync
 
 ---
 
+## 默认执行参数
+
+- 默认 `max_turns`: 30
+- `quick`: 20
+- `review`: 50
+- `deep`: 50
+- 默认 `max_budget_usd`: 10.00
+
+---
+
 ## MCP 配置（可选）
 
 IssueLab 支持 MCP 工具扩展，支持**全局**与**按 Agent 覆盖**：
@@ -133,6 +143,15 @@ IssueLab 支持 MCP 工具扩展，支持**全局**与**按 Agent 覆盖**：
 - 合并规则：先加载全局，再用 Agent 配置覆盖同名 server
 - 模板参考：`agents/_template/.mcp.json`
 - 提示词注入：在 `prompt.md` 中加入 `{mcp_servers}` 占位符可显示当前加载的 MCP 列表
+
+---
+
+## Skills / Subagents（可选）
+
+- Skills 路径：`.claude/skills/`
+- 每个 Agent 独立 Skills：`agents/<name>/.claude/skills/`
+- Subagents 路径：`.claude/agents/` 或 `agents/<name>/.claude/agents/`
+- Subagents 通过 `Task` 工具调用（已在 SDK 选项中启用）
 
 ---
 
