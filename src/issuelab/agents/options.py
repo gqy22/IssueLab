@@ -214,6 +214,26 @@ def _subagents_signature(subagents: dict[str, AgentDefinition]) -> str:
     return json.dumps(sorted(subagents.keys()), ensure_ascii=True)
 
 
+def _subagents_signature_from_dir(path: Path) -> list[tuple[str, float]]:
+    """获取 subagents 目录签名（基于文件名与 mtime）"""
+    agents_dir = path / ".claude" / "agents"
+    if not agents_dir.exists():
+        return []
+
+    entries = []
+    for md in agents_dir.glob("*.md"):
+        try:
+            entries.append((md.name, md.stat().st_mtime))
+        except OSError:
+            continue
+    return sorted(entries)
+
+
+def _subagents_signature_for_cache(project_entries: list[tuple[str, float]], user_entries: list[tuple[str, float]]) -> str:
+    """生成 subagents 缓存签名（包含 mtime）"""
+    return json.dumps({"project": project_entries, "user": user_entries}, ensure_ascii=True)
+
+
 def _run_async_in_thread(coro, timeout_ms: int) -> Any:
     """在独立线程中运行 async 任务，避免与当前事件循环冲突"""
     timeout_sec = max(timeout_ms, 0) / 1000.0
@@ -333,6 +353,16 @@ def _create_agent_options_impl(
     for name, definition in {**user_subagents, **project_subagents}.items():
         agent_definitions[name] = definition
 
+    if project_subagents or user_subagents:
+        logger.info(
+            "Subagents loaded for agent '%s': project=%s user=%s",
+            agent_name or "default",
+            ", ".join(sorted(project_subagents.keys())) if project_subagents else "(none)",
+            ", ".join(sorted(user_subagents.keys())) if user_subagents else "(none)",
+        )
+    else:
+        logger.info("No subagents configured for agent '%s'", agent_name or "default")
+
     allowed_tools = main_tools[:]
     if mcp_servers:
         allowed_tools.extend([f"mcp__{name}__*" for name in mcp_servers])
@@ -404,29 +434,10 @@ def create_agent_options(
     else:
         logger.info("No skills configured for agent '%s'", agent_name or "default")
 
-    if os.environ.get("MCP_LOG_TOOLS") == "1" and mcp_servers:
-        timeout_ms = int(os.environ.get("MCP_LIST_TOOLS_TIMEOUT_MS", "3000"))
-        for name, cfg in mcp_servers.items():
-            tools = _list_tools_for_mcp_server(name, cfg, timeout_ms=timeout_ms)
-            if tools:
-                logger.info("MCP tools for '%s': %s", name, ", ".join(sorted(tools)))
-            else:
-                logger.info("MCP tools for '%s': (none or unavailable)", name)
-    # per-agent subagents signature for cache
-    subagent_tools = ["Read", "Write", "Bash", "Skill"]
-    project_subagents = _load_subagents_from_dir(cwd, subagent_tools)
-    user_subagents = _load_subagents_from_dir(Path(os.path.expanduser("~")), subagent_tools)
-    subagents_sig = _subagents_signature({**user_subagents, **project_subagents})
-
-    if project_subagents or user_subagents:
-        logger.info(
-            "Subagents loaded for agent '%s': project=%s user=%s",
-            agent_name or "default",
-            ", ".join(sorted(project_subagents.keys())) if project_subagents else "(none)",
-            ", ".join(sorted(user_subagents.keys())) if user_subagents else "(none)",
-        )
-    else:
-        logger.info("No subagents configured for agent '%s'", agent_name or "default")
+    # per-agent subagents signature for cache (avoid loading full files on cache hit)
+    project_subagents_sig = _subagents_signature_from_dir(cwd)
+    user_subagents_sig = _subagents_signature_from_dir(Path(os.path.expanduser("~")))
+    subagents_sig = _subagents_signature_for_cache(project_subagents_sig, user_subagents_sig)
 
     cache_key = (
         effective_max_turns,
@@ -442,6 +453,14 @@ def create_agent_options(
         logger.debug(f"使用缓存的 Agent 选项 (key={cache_key})")
         return _cached_agent_options[cache_key]
 
+    if os.environ.get("MCP_LOG_TOOLS") == "1" and mcp_servers:
+        timeout_ms = int(os.environ.get("MCP_LIST_TOOLS_TIMEOUT_MS", "3000"))
+        for name, cfg in mcp_servers.items():
+            tools = _list_tools_for_mcp_server(name, cfg, timeout_ms=timeout_ms)
+            if tools:
+                logger.info("MCP tools for '%s': %s", name, ", ".join(sorted(tools)))
+            else:
+                logger.info("MCP tools for '%s': (none or unavailable)", name)
     # 创建新配置
     options = _create_agent_options_impl(
         max_turns,

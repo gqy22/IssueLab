@@ -13,6 +13,37 @@ from issuelab.agents.registry import load_registry
 PROMPTS_DIR = Path(__file__).parent.parent.parent.parent / "prompts"
 AGENTS_DIR = Path(__file__).parent.parent.parent.parent / "agents"
 
+# 进程级缓存
+_CACHED_AGENTS: dict | None = None
+_CACHED_SIGNATURE: tuple | None = None
+
+
+def _get_discovery_signature() -> tuple:
+    """生成当前 prompts/agents 的签名（基于文件 mtime）"""
+    signature: list[tuple[str, float]] = []
+
+    if PROMPTS_DIR.exists():
+        for prompt_file in sorted(PROMPTS_DIR.glob("*.md")):
+            try:
+                signature.append((f"prompts/{prompt_file.name}", prompt_file.stat().st_mtime))
+            except OSError:
+                continue
+
+    if AGENTS_DIR.exists():
+        for user_dir in sorted(AGENTS_DIR.iterdir()):
+            if not user_dir.is_dir():
+                continue
+            for name in ("agent.yml", "prompt.md"):
+                path = user_dir / name
+                if not path.exists():
+                    continue
+                try:
+                    signature.append((f"agents/{user_dir.name}/{name}", path.stat().st_mtime))
+                except OSError:
+                    continue
+
+    return tuple(signature)
+
 
 def parse_agent_metadata(content: str) -> dict | None:
     """从 prompt 文件中解析 YAML 元数据
@@ -88,6 +119,12 @@ def discover_agents() -> dict:
             }
         }
     """
+    global _CACHED_AGENTS, _CACHED_SIGNATURE
+
+    signature = _get_discovery_signature()
+    if _CACHED_AGENTS is not None and signature == _CACHED_SIGNATURE:
+        return _CACHED_AGENTS
+
     agents = {}
 
     if not PROMPTS_DIR.exists():
@@ -129,6 +166,8 @@ def discover_agents() -> dict:
                 "trigger_conditions": agent_config.get("triggers", []),
             }
 
+    _CACHED_AGENTS = agents
+    _CACHED_SIGNATURE = signature
     return agents
 
 

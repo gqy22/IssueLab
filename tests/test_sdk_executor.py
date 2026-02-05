@@ -285,6 +285,27 @@ class TestCaching:
         config = get_agent_config_for_scene("unknown_scene")
         assert config.max_turns == SCENE_CONFIGS["review"].max_turns
 
+    def test_create_agent_options_cache_skips_subagent_load(self, monkeypatch):
+        """缓存命中时不应再次加载 subagents"""
+        from issuelab.agents import options as options_mod
+
+        options_mod.clear_agent_options_cache()
+
+        monkeypatch.setattr(options_mod, "load_mcp_servers_for_agent", lambda *a, **k: {})
+        monkeypatch.setattr(options_mod, "_skills_signature", lambda *a, **k: "skills-sig")
+
+        # 第一次调用用于填充缓存
+        _ = options_mod.create_agent_options(agent_name="moderator")
+
+        # 缓存命中时不应再加载 subagents
+        monkeypatch.setattr(
+            options_mod,
+            "_load_subagents_from_dir",
+            lambda *a, **k: (_ for _ in ()).throw(AssertionError("subagents loaded on cache hit")),
+        )
+
+        _ = options_mod.create_agent_options(agent_name="moderator")
+
 
 class TestParseObserverResponse:
     """测试 Observer 响应解析"""
