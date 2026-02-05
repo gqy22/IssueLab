@@ -24,6 +24,26 @@ from issuelab.retry import retry_async
 
 logger = get_logger(__name__)
 
+_OUTPUT_SCHEMA_BLOCK = (
+    "\n\n## Output Format (required)\n"
+    "请严格输出以下 YAML：\n\n"
+    "```yaml\n"
+    "summary: \"\"\n"
+    "findings:\n"
+    "  - \"\"\n"
+    "recommendations:\n"
+    "  - \"\"\n"
+    "confidence: \"low|medium|high\"\n"
+    "```\n"
+)
+
+
+def _append_output_schema(prompt: str) -> str:
+    """为 prompt 注入统一输出格式（如果尚未注入）。"""
+    if "## Output Format (required)" in prompt:
+        return prompt
+    return f"{prompt}{_OUTPUT_SCHEMA_BLOCK}"
+
 
 async def run_single_agent(prompt: str, agent_name: str) -> dict:
     """运行单个代理（带完善的中间日志监听）
@@ -64,7 +84,8 @@ async def run_single_agent(prompt: str, agent_name: str) -> dict:
         tool_calls = []
         first_result = True
 
-        async for message in query(prompt=prompt, options=options):
+        effective_prompt = _append_output_schema(prompt)
+        async for message in query(prompt=effective_prompt, options=options):
             # AssistantMessage: AI 响应（文本或工具调用）
             if isinstance(message, AssistantMessage):
                 turn_count += 1

@@ -578,3 +578,25 @@ class TestStreamingOutput:
             assert info["input_tokens"] == 123
             assert info["output_tokens"] == 45
             assert info["total_tokens"] == 168
+
+    @pytest.mark.asyncio
+    async def test_output_schema_is_injected(self):
+        """执行时应注入统一输出格式"""
+        from claude_agent_sdk import ResultMessage
+
+        from issuelab.agents.executor import run_single_agent
+
+        captured = {}
+
+        async def mock_query(*args, **kwargs):
+            captured["prompt"] = kwargs.get("prompt")
+            result = MagicMock(spec=ResultMessage)
+            result.total_cost_usd = 0.0
+            result.num_turns = 1
+            result.session_id = "test-session"
+            yield result
+
+        with patch("issuelab.agents.executor.query", mock_query):
+            await run_single_agent("test prompt", "test_agent")
+
+        assert "## Output Format (required)" in captured["prompt"]
