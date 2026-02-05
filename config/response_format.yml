@@ -8,11 +8,11 @@ sections:
   structured: "## Structured (YAML)"
 
 limits:
-  summary_max_chars: 20
-  findings_count: 3
-  findings_max_chars: 25
-  actions_max_count: 2
-  actions_max_chars: 30
+  summary_max_chars: 160
+  findings_count: 5
+  findings_max_chars: 160
+  actions_max_count: 3
+  actions_max_chars: 160
 
 rules:
   mentions_only_in_actions: true
