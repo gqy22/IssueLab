@@ -4,7 +4,6 @@ import json
 import os
 import tempfile
 from pathlib import Path
-
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -15,8 +14,8 @@ from issuelab.agents.options import (
     _cached_agent_options,
     clear_agent_options_cache,
     create_agent_options,
-    load_mcp_servers_for_agent,
     format_mcp_servers_for_prompt,
+    load_mcp_servers_for_agent,
 )
 from issuelab.agents.parsers import parse_observer_response
 
@@ -67,8 +66,8 @@ class TestAgentConfig:
     def test_agent_config_defaults(self):
         """AgentConfig 应该有合理的默认值"""
         config = AgentConfig()
-        assert config.max_turns == 15
-        assert config.max_budget_usd == 0.50
+        assert config.max_turns == 30
+        assert config.max_budget_usd == 10.00
         assert config.timeout_seconds == 180
 
     def test_agent_config_custom_values(self):
@@ -125,12 +124,12 @@ class TestCreateAgentOptionsWithTimeout:
     def test_create_agent_options_uses_default_max_turns(self):
         """create_agent_options 应该使用默认的 max_turns"""
         options = create_agent_options()
-        assert options.max_turns == 15  # 默认值
+        assert options.max_turns == 30  # 默认值
 
     def test_create_agent_options_uses_default_max_budget_usd(self):
         """create_agent_options 应该使用默认的 max_budget_usd"""
         options = create_agent_options()
-        assert options.max_budget_usd == 0.50  # 默认值
+        assert options.max_budget_usd == 10.00  # 默认值
 
 
 class TestMcpConfigLoading:
@@ -193,13 +192,52 @@ class TestMcpConfigLoading:
     def test_mcp_log_tools_triggers_listing(self):
         """MCP_LOG_TOOLS=1 时应触发工具列表逻辑"""
         clear_agent_options_cache()
-        with patch.dict(os.environ, {"MCP_LOG_TOOLS": "1"}):
-            with patch("issuelab.agents.options.load_mcp_servers_for_agent") as mock_load:
-                mock_load.return_value = {"docs": {"command": "echo", "args": ["hi"]}}
-                with patch("issuelab.agents.options._list_tools_for_mcp_server") as mock_list:
-                    mock_list.return_value = []
-                    _ = create_agent_options(agent_name="moderator")
-                    mock_list.assert_called()
+        with (
+            patch.dict(os.environ, {"MCP_LOG_TOOLS": "1"}),
+            patch("issuelab.agents.options.load_mcp_servers_for_agent") as mock_load,
+            patch("issuelab.agents.options._list_tools_for_mcp_server") as mock_list,
+        ):
+            mock_load.return_value = {"docs": {"command": "echo", "args": ["hi"]}}
+            mock_list.return_value = []
+            _ = create_agent_options(agent_name="moderator")
+            mock_list.assert_called()
+
+
+class TestSubagents:
+    """测试 per-agent subagents 机制"""
+
+    def test_per_agent_subagent_loaded_without_task(self, tmp_path):
+        """subagent 应加载且不包含 Task 工具"""
+        from issuelab.agents.options import create_agent_options
+
+        # 创建 agents 目录结构
+        agents_dir = tmp_path / "agents" / "gqy20" / ".claude" / "agents"
+        agents_dir.mkdir(parents=True)
+        (agents_dir / "literature-triage.md").write_text(
+            "---\n"
+            "agent: literature-triage\n"
+            "description: test subagent\n"
+            "tools:\n"
+            "  - Read\n"
+            "  - Task\n"
+            "---\n\n"
+            "# Triage\n"
+            "Content",
+            encoding="utf-8",
+        )
+
+        # patch AGENTS_DIR to point to tmp agents root
+        with (
+            patch("issuelab.agents.options.AGENTS_DIR", tmp_path / "agents"),
+            patch("issuelab.agents.options.discover_agents") as mock_discover,
+        ):
+            mock_discover.return_value = {}
+            options = create_agent_options(agent_name="gqy20")
+
+        assert "literature-triage" in options.agents
+        subagent = options.agents["literature-triage"]
+        assert "Task" not in subagent.tools
+        assert "Task" in options.allowed_tools
 
 
 class TestEnvOptimization:
@@ -249,6 +287,64 @@ class TestCaching:
         """get_agent_config_for_scene 未知场景应该返回 review 配置"""
         config = get_agent_config_for_scene("unknown_scene")
         assert config.max_turns == SCENE_CONFIGS["review"].max_turns
+
+    def test_create_agent_options_cache_skips_subagent_load(self, monkeypatch):
+        """缓存命中时不应再次加载 subagents"""
+        from issuelab.agents import options as options_mod
+
+        options_mod.clear_agent_options_cache()
+
+        monkeypatch.setattr(options_mod, "load_mcp_servers_for_agent", lambda *a, **k: {})
+        monkeypatch.setattr(options_mod, "_skills_signature", lambda *a, **k: "skills-sig")
+
+        # 第一次调用用于填充缓存
+        _ = options_mod.create_agent_options(agent_name="moderator")
+
+        # 缓存命中时不应再加载 subagents
+        monkeypatch.setattr(
+            options_mod,
+            "_load_subagents_from_dir",
+            lambda *a, **k: (_ for _ in ()).throw(AssertionError("subagents loaded on cache hit")),
+        )
+
+        _ = options_mod.create_agent_options(agent_name="moderator")
+
+    def test_create_agent_options_uses_agent_overrides(self, monkeypatch):
+        """agent.yml 的运行配置应覆盖默认值"""
+        from issuelab.agents import options as options_mod
+
+        options_mod.clear_agent_options_cache()
+
+        monkeypatch.setattr(options_mod, "load_mcp_servers_for_agent", lambda *a, **k: {})
+        monkeypatch.setattr(options_mod, "_skills_signature", lambda *a, **k: "skills-sig")
+        monkeypatch.setattr(options_mod, "_subagents_signature_from_dir", lambda *a, **k: [])
+        monkeypatch.setattr(
+            options_mod,
+            "get_agent_config",
+            lambda *a, **k: {"max_turns": 7, "max_budget_usd": 1.5, "timeout_seconds": 42},
+        )
+
+        options = options_mod.create_agent_options(agent_name="alice")
+        assert options.max_turns == 7
+        assert options.max_budget_usd == 1.5
+
+    def test_create_agent_options_feature_flags(self, monkeypatch):
+        """agent.yml 功能开关应生效（默认启用）"""
+        from issuelab.agents import options as options_mod
+
+        options_mod.clear_agent_options_cache()
+
+        monkeypatch.setattr(options_mod, "load_mcp_servers_for_agent", lambda *a, **k: {"docs": {"type": "http"}})
+        monkeypatch.setattr(options_mod, "_skills_signature", lambda *a, **k: "skills-sig")
+        monkeypatch.setattr(options_mod, "_subagents_signature_from_dir", lambda *a, **k: [("a.md", 1.0)])
+        monkeypatch.setattr(
+            options_mod,
+            "get_agent_config",
+            lambda *a, **k: {"enable_mcp": False, "enable_skills": False, "enable_subagents": False},
+        )
+
+        options = options_mod.create_agent_options(agent_name="alice")
+        assert not any(t.startswith("mcp__") for t in options.allowed_tools)
 
 
 class TestParseObserverResponse:
@@ -482,3 +578,25 @@ class TestStreamingOutput:
             assert info["input_tokens"] == 123
             assert info["output_tokens"] == 45
             assert info["total_tokens"] == 168
+
+    @pytest.mark.asyncio
+    async def test_output_schema_is_injected(self):
+        """执行时应注入统一输出格式"""
+        from claude_agent_sdk import ResultMessage
+
+        from issuelab.agents.executor import run_single_agent
+
+        captured = {}
+
+        async def mock_query(*args, **kwargs):
+            captured["prompt"] = kwargs.get("prompt")
+            result = MagicMock(spec=ResultMessage)
+            result.total_cost_usd = 0.0
+            result.num_turns = 1
+            result.session_id = "test-session"
+            yield result
+
+        with patch("issuelab.agents.executor.query", mock_query):
+            await run_single_agent("test prompt", "test_agent")
+
+        assert "## Output Format (required)" in captured["prompt"]

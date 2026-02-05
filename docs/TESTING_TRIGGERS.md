@@ -26,8 +26,11 @@ uv sync
 ### 2. 设置环境变量
 
 ```bash
-export GITHUB_TOKEN="your_github_token"
-export ANTHROPIC_API_KEY="your_anthropic_api_key"
+export GITHUB_APP_ID="your_app_id"
+export GITHUB_APP_PRIVATE_KEY="your_app_private_key"
+export PAT_TOKEN="your_pat_token"        # 必需：用于评论显示用户身份
+export GITHUB_TOKEN="your_github_token"  # 可选：用于本地 gh CLI
+export ANTHROPIC_AUTH_TOKEN="your_anthropic_api_key"
 ```
 
 ### 3. 运行基础测试
@@ -62,12 +65,12 @@ uv run pytest tests/test_cli.py -v              # CLI 命令测试
 
 def test_parse_single_mention():
     """测试解析单个 @mention"""
-    result = parse_mentions("@moderator 请审核")
+    result = parse_agent_mentions("@moderator 请审核")
     assert result == ["moderator"]
 
 def test_parse_multiple_mentions():
     """测试解析多个 @mention"""
-    result = parse_mentions("@moderator 审核，@reviewer_a 评审")
+    result = parse_agent_mentions("@moderator 审核，@reviewer_a 评审")
     assert result == ["moderator", "reviewer_a"]
 
 def test_parse_name_mappings():
@@ -110,9 +113,7 @@ for t in tests:
 - `@reviewer_a`
 - `@reviewer_b`
 - `@summarizer`
-| `reviewer` / `reviewera` / `reva` | `reviewer_a` |
-| `reviewerb` / `reviewer_b` / `revb` | `reviewer_b` |
-| `summary` | `summarizer` |
+
 
 ---
 

@@ -47,8 +47,3 @@ def has_agent_mentions(comment_body: str) -> bool:
         是否包含 @mention
     """
     return bool(re.search(r"@[a-zA-Z_]+", comment_body))
-
-
-# 向后兼容接口（逐步废弃）
-parse_mentions = parse_agent_mentions
-has_mentions = has_agent_mentions

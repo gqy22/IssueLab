@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "AI 辅助科研评审系统"
 requires-python = ">=3.13"
 dependencies = [
-    "claude-agent-sdk>=0.1.27",
+    "claude-agent-sdk>=0.1.29",
     "pyyaml>=6.0",
     "requests>=2.31.0",
     "pyjwt>=2.8.0",
@@ -15,7 +15,13 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=8.0.0", "pytest-asyncio>=0.23.0", "pytest-cov>=7.0.0"]
-dev = ["ruff>=0.8.0", "mypy>=1.13.0", "pre-commit>=4.0.0"]
+dev = [
+    "ruff>=0.8.0",
+    "mypy>=1.13.0",
+    "pre-commit>=4.0.0",
+    "types-PyYAML>=6.0.12.20240917",
+    "types-requests>=2.32.0.20240914",
+]
 
 [tool.uv]
 package = true

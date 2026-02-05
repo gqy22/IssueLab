@@ -114,9 +114,9 @@ def test_orchestrator_workflow_sets_skip_version_check():
         pytest.skip("工作流文件不存在")
 
     content = workflow_path.read_text()
-    assert "CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK" in content, (
-        "工作流应该设置 CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK 环境变量"
-    )
+    assert (
+        "CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK" in content
+    ), "工作流应该设置 CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK 环境变量"
 
 
 def test_skip_version_check_env_is_true():
@@ -133,6 +133,6 @@ def test_default_agent_config():
     from issuelab.agents.config import AgentConfig
 
     config = AgentConfig()
-    assert config.max_turns == 15
-    assert config.max_budget_usd == 0.50
+    assert config.max_turns == 30
+    assert config.max_budget_usd == 10.00
     assert config.timeout_seconds == 180

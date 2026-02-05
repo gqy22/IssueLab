@@ -224,6 +224,7 @@ enabled: false
         registry = {
             "alice": {"owner": "alice", "repository": "alice/IssueLab", "triggers": ["@alice"]},
             "bob": {"owner": "bob", "repository": "bob/IssueLab", "triggers": ["@bob", "@bob-cv"]},
+            "carol": {"owner": "carol", "repository": "carol/IssueLab"},
         }
 
         # Test direct match
@@ -239,10 +240,10 @@ enabled: false
         matched = match_triggers(["charlie"], registry)
         assert len(matched) == 0
 
-        # Test trigger match
-        matched = match_triggers(["bob-cv"], registry)
+        # Test default match
+        matched = match_triggers(["carol"], registry)
         assert len(matched) == 1
-        assert matched[0]["owner"] == "bob"
+        assert matched[0]["owner"] == "carol"
 
 
 class TestDispatchCLI:
@@ -253,7 +254,8 @@ class TestDispatchCLI:
         from issuelab.cli.dispatch import main
 
         # Mock environment
-        monkeypatch.setenv("GITHUB_TOKEN", "fake_token")
+        monkeypatch.setenv("GITHUB_APP_ID", "fake_app_id")
+        monkeypatch.setenv("GITHUB_APP_PRIVATE_KEY", "fake_private_key")
 
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create empty agents directory
@@ -282,7 +284,8 @@ class TestDispatchCLI:
         from issuelab.cli.dispatch import main
 
         # Mock environment
-        monkeypatch.setenv("GITHUB_TOKEN", "fake_token")
+        monkeypatch.setenv("GITHUB_APP_ID", "fake_app_id")
+        monkeypatch.setenv("GITHUB_APP_PRIVATE_KEY", "fake_private_key")
 
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create empty agents directory

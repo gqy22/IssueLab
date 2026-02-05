@@ -53,10 +53,7 @@ def extract_issue_body(context: str) -> str:
             return body
 
     marker = "**Issue 内容**:\n"
-    if marker in context:
-        body = context.split(marker, 1)[1]
-    else:
-        body = context
+    body = context.split(marker, 1)[1] if marker in context else context
 
     comments_marker = "\n\n**本 Issue 共有"
     if comments_marker in body:

@@ -2,17 +2,18 @@
 Observer 自动触发功能
 
 实现Observer自动触发agent的核心逻辑：
-- 内置agent通过workflow dispatch触发（使用PAT_TOKEN）
-- 用户agent通过repository dispatch触发（使用PAT_TOKEN）
+- 内置agent通过workflow dispatch触发（使用 GitHub App token）
+- 用户agent通过repository/workflow dispatch触发（使用 GitHub App token）
 
 统一使用dispatch机制，无需预创建labels，简化架构。
 """
 
-from issuelab.agents.registry import BUILTIN_AGENTS, is_registered_agent
 import logging
 import os
 import subprocess
 import sys
+
+from issuelab.agents.registry import BUILTIN_AGENTS, is_registered_agent
 
 logger = logging.getLogger(__name__)
 
@@ -101,61 +102,8 @@ def trigger_user_agent(username: str, issue_number: int, issue_title: str, issue
         logger.error(f"[ERROR] Agent {username} not registered or disabled")
         return False
 
-    target_repo = config.get("repository", "")
-
-    # 判断是本地执行还是dispatch
-    if target_repo == source_repo:
-        # 本地仓库：直接本地执行
-        return trigger_local_user_agent(username, issue_number, issue_title, issue_body)
-    else:
-        # fork仓库：dispatch到用户仓库
-        return dispatch_user_agent(username, issue_number, issue_title, issue_body, source_repo)
-
-
-def trigger_local_user_agent(username: str, issue_number: int, issue_title: str, issue_body: str) -> bool:
-    """本地执行用户agent（主仓库场景）"""
-    import asyncio
-
-    from issuelab.agents.executor import run_agents_parallel
-    from issuelab.tools.github import get_issue_info
-
-    try:
-        logger.info(f"[INFO] 本地执行用户agent: {username} for #{issue_number}")
-
-        # 获取Issue完整信息
-        issue_info = get_issue_info(issue_number, format_comments=True)
-
-        # 构建上下文
-        context = f"**Issue 标题**: {issue_info['title']}\n\n**Issue 内容**:\n{issue_info['body']}"
-        comment_count = issue_info["comment_count"]
-        comments = issue_info["comments"]
-
-        if comment_count > 0 and comments:
-            context += f"\n\n**本 Issue 共有 {comment_count} 条历史评论：**\n\n{comments}"
-
-        # 本地执行agent
-        results = asyncio.run(run_agents_parallel(issue_number, [username], context, comment_count))
-
-        if username not in results:
-            logger.error(f"[ERROR] Agent {username} 执行失败")
-            return False
-
-        # 获取响应
-        response = results[username].get("response", "")
-
-        # 发布到Issue
-        from issuelab.tools.github import post_comment
-
-        if post_comment(issue_number, response):
-            logger.info(f"[OK] {username} response posted to issue #{issue_number}")
-            return True
-        else:
-            logger.error(f"[ERROR] Failed to post {username} response")
-            return False
-
-    except Exception as e:
-        logger.error(f"[ERROR] 本地执行agent失败: {e}")
-        return False
+    # 统一走 dispatch 到用户仓库
+    return dispatch_user_agent(username, issue_number, issue_title, issue_body, source_repo)
 
 
 def dispatch_user_agent(username: str, issue_number: int, issue_title: str, issue_body: str, source_repo: str) -> bool:

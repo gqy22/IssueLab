@@ -3,8 +3,10 @@
 处理 Agent 的执行、消息流和日志记录。
 """
 
-import anyio
 import os
+from typing import Any, cast
+
+import anyio
 from claude_agent_sdk import (
     AssistantMessage,
     ResultMessage,
@@ -15,11 +17,32 @@ from claude_agent_sdk import (
     query,
 )
 
+from issuelab.agents.config import AgentConfig
 from issuelab.agents.options import create_agent_options, format_mcp_servers_for_prompt
 from issuelab.logging_config import get_logger
 from issuelab.retry import retry_async
 
 logger = get_logger(__name__)
+
+_OUTPUT_SCHEMA_BLOCK = (
+    "\n\n## Output Format (required)\n"
+    "请严格输出以下 YAML：\n\n"
+    "```yaml\n"
+    'summary: ""\n'
+    "findings:\n"
+    '  - ""\n'
+    "recommendations:\n"
+    '  - ""\n'
+    'confidence: "low|medium|high"\n'
+    "```\n"
+)
+
+
+def _append_output_schema(prompt: str) -> str:
+    """为 prompt 注入统一输出格式（如果尚未注入）。"""
+    if "## Output Format (required)" in prompt:
+        return prompt
+    return f"{prompt}{_OUTPUT_SCHEMA_BLOCK}"
 
 
 async def run_single_agent(prompt: str, agent_name: str) -> dict:
@@ -42,7 +65,7 @@ async def run_single_agent(prompt: str, agent_name: str) -> dict:
     logger.debug(f"[{agent_name}] Prompt 长度: {len(prompt)} 字符")
 
     # 执行信息收集
-    execution_info = {
+    execution_info: dict[str, Any] = {
         "response": "",
         "cost_usd": 0.0,
         "num_turns": 0,
@@ -61,7 +84,8 @@ async def run_single_agent(prompt: str, agent_name: str) -> dict:
         tool_calls = []
         first_result = True
 
-        async for message in query(prompt=prompt, options=options):
+        effective_prompt = _append_output_schema(prompt)
+        async for message in query(prompt=effective_prompt, options=options):
             # AssistantMessage: AI 响应（文本或工具调用）
             if isinstance(message, AssistantMessage):
                 turn_count += 1
@@ -96,6 +120,10 @@ async def run_single_agent(prompt: str, agent_name: str) -> dict:
 
                         # 终端输出
                         print(f"\n[{tool_name}] id={tool_use_id}", end="", flush=True)
+                        if tool_name == "Skill" or tool_name.startswith("Skill"):
+                            logger.info(f"[{agent_name}] [Skill] {tool_name}(id={tool_use_id})")
+                        if tool_name == "Task":
+                            logger.info(f"[{agent_name}] [Subagent] Task(id={tool_use_id})")
                         # 详细日志输出
                         if isinstance(tool_input, dict):
                             import json
@@ -155,8 +183,36 @@ async def run_single_agent(prompt: str, agent_name: str) -> dict:
         result = "\n".join(response_text)
         return result
 
+    def _get_timeout_seconds() -> int | None:
+        config = None
+        try:
+            from issuelab.agents.registry import get_agent_config
+
+            config = get_agent_config(agent_name)
+        except Exception:
+            config = None
+
+        if config and "timeout_seconds" in config:
+            try:
+                value = int(config["timeout_seconds"])
+                return value if value > 0 else None
+            except (TypeError, ValueError):
+                return None
+        return AgentConfig().timeout_seconds
+
     try:
-        response = await retry_async(_query_agent, max_retries=3, initial_delay=2.0, backoff_factor=2.0)
+        timeout_seconds = _get_timeout_seconds()
+        if timeout_seconds:
+            with anyio.fail_after(timeout_seconds):
+                response = cast(
+                    str,
+                    await retry_async(_query_agent, max_retries=3, initial_delay=2.0, backoff_factor=2.0),
+                )
+        else:
+            response = cast(
+                str,
+                await retry_async(_query_agent, max_retries=3, initial_delay=2.0, backoff_factor=2.0),
+            )
         execution_info["response"] = response
 
         # 最终日志
@@ -184,12 +240,20 @@ async def run_single_agent(prompt: str, agent_name: str) -> dict:
         }
 
 
+async def run_single_agent_text(prompt: str, agent_name: str | None = None) -> str:
+    """轻量封装：只返回响应文本"""
+    name = agent_name or "default"
+    result = await run_single_agent(prompt, name)
+    return result.get("response", "")
+
+
 async def run_agents_parallel(
     issue_number: int,
     agents: list[str],
     context: str = "",
     comment_count: int = 0,
     available_agents: list[dict] | None = None,
+    trigger_comment: str | None = None,
 ) -> dict:
     """并行运行多个代理
 
@@ -224,6 +288,8 @@ async def run_agents_parallel(
 
     # 构建任务上下文（Issue 信息）
     task_context = context
+    if trigger_comment:
+        task_context = "## 最新触发评论（最高优先级）\n" f"{trigger_comment}\n\n" "---\n\n" f"{task_context}"
     if comment_count > 0:
         task_context += f"\n\n**重要提示**: 本 Issue 已有 {comment_count} 条历史评论。请仔细阅读并分析这些评论。"
 

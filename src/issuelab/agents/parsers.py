@@ -8,7 +8,7 @@ from issuelab.logging_config import get_logger
 logger = get_logger(__name__)
 
 
-def parse_observer_response(response: str, issue_number: int | None = None) -> dict:
+def parse_observer_response(response: str, issue_number: int | None = None) -> dict[str, object]:
     """解析 Observer Agent 的响应
 
     Args:
@@ -47,8 +47,10 @@ def parse_observer_response(response: str, issue_number: int | None = None) -> d
     result["analysis"] = yaml_data.get("analysis", "")
 
     # 如果没有解析到触发评论，使用默认格式
-    if result["should_trigger"] and result["agent"] and not result["comment"]:
-        result["comment"] = _get_default_trigger_comment(result["agent"])
+    agent_name = str(result["agent"]) if result["agent"] is not None else ""
+    if result["should_trigger"] and agent_name and not result["comment"]:
+        result["comment"] = _get_default_trigger_comment(agent_name)
+        result["agent"] = agent_name
 
     return result
 
@@ -110,7 +112,7 @@ def _try_parse_yaml(response: str) -> dict | None:
     return None
 
 
-def parse_papers_recommendation(response: str, paper_count: int) -> list[dict]:
+def parse_papers_recommendation(response: str, paper_count: int) -> list[dict[str, object]]:
     """解析 Observer 对论文推荐的响应
 
     Args:
@@ -130,7 +132,7 @@ def parse_papers_recommendation(response: str, paper_count: int) -> list[dict]:
             "published": str,
         }]
     """
-    recommended = []
+    recommended: list[dict[str, object]] = []
 
     yaml_data = _try_parse_yaml(response)
     if yaml_data is None:

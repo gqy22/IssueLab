@@ -2,30 +2,33 @@
 # 复制此文件到 agents/YOUR_GITHUB_ID/agent.yml，然后根据需要修改
 
 # 智能体信息
-id: your-github-id-agent        # 必需：智能体唯一ID，建议格式：用户名-角色
+# 智能体信息
 name: "我的智能体"              # 必需：显示名称
-owner: your-github-id           # 必需：你的 GitHub ID
-display_name: "Your Name"       # 可选：你的显示名称
+owner: your-github-id           # 必需：你的 GitHub ID（即用户名）
 contact: "your.email@example.com"  # 可选：联系方式
 bio: "A brief introduction about yourself and your expertise."  # 可选：个人简介
+interests:                      # 可选：个人兴趣关键词（用于 personal-scan 智能筛选）
+  - "machine learning"
+  - "systems"
 
-# 智能体类型和描述
-type: reviewer                   # 必需：类型，可选值：moderator, reviewer, summarizer
-description: "这是我的智能体，专注于..."  # 必需：智能体描述
+# 智能体描述
+description: "这是我的智能体，专注于..."  # 必需：智能体描述（用于协作指南与 personal-scan）
 
-# 触发条件（与用户名一致，方便管理）
-triggers:                        # 必需：触发条件列表
-  - "@your-github-id"            # @mention 触发（与你的 GitHub 用户名一致）
+# 触发条件
+# - @mention：在 Issue 或评论中 @你的 GitHub 用户名即可触发
 
 # 运行配置
-priority: 5                      # 可选：优先级 0-10，数字越大越先运行，默认 5
-auto_trigger: false              # 可选：是否在 Issue 创建时自动触发，默认 false
 enabled: true                    # 可选：是否启用，默认 true
 
-# 标签过滤（可选）
-labels_filter:                   # 可选：只响应包含这些标签的 Issue
-  - "domain:your-domain"         # 例如：domain:ai, domain:cv
-  - "priority:high"
+# 对话配置（可选，支持 per-agent 覆盖默认值）
+max_turns: 30                    # 可选：最大对话轮数
+max_budget_usd: 10.00            # 可选：最大消耗金额（美元）
+timeout_seconds: 180             # 可选：单次运行超时（秒）
+
+# 功能开关（可选，默认启用）
+enable_skills: true              # 是否加载 Skills（.claude/skills）
+enable_subagents: true           # 是否加载 Subagents（.claude/agents）
+enable_mcp: true                 # 是否启用 MCP 工具
 
 # 仓库配置（重要：必须修改为你自己的 fork 仓库）
 repository: "your-github-id/IssueLab"  # 必需：你的 fork 仓库
@@ -37,34 +40,14 @@ dispatch_mode: workflow_dispatch   # 可选：dispatch 方式
                                      #   - workflow_dispatch: 使用 workflow_dispatch 事件（推荐 fork 仓库）
 workflow_file: user_agent.yml      # 可选：workflow_dispatch 模式时指定的 workflow 文件
 
-# 速率限制
-rate_limit:                      # 可选：速率限制
-  max_calls_per_hour: 10         # 每小时最多调用次数
-  max_calls_per_day: 50          # 每天最多调用次数
-
-# 超时设置
-timeout_minutes: 15              # 可选：单次运行超时时间（分钟），默认 15
-
-# GitHub Token 配置（重要：影响回复身份）
-# 
-# 配置方式：在你的 fork 仓库中设置 secrets
-# Settings → Secrets and variables → Actions → New repository secret
+# GitHub App 配置（用于跨仓库触发）
 #
-# 方式1：使用默认 GITHUB_TOKEN（推荐新手）
-#   - 无需额外配置
-#   - 回复显示为：github-actions[bot]
-#   - 权限受限，但足够基本使用
+# 在你的 fork 仓库中设置 secrets：
+# - GITHUB_APP_ID
+# - GITHUB_APP_PRIVATE_KEY
 #
-# 方式2：使用个人 PAT（推荐进阶用户）
-#   - Secret 名称：PAT_TOKEN
-#   - Secret 值：你的 GitHub Personal Access Token
-#   - 创建 PAT：Settings → Developer settings → Personal access tokens → Generate new token
-#   - 需要权限：repo (可以评论) + workflow (可以触发workflow)
-#   - 回复显示为：你的用户名（如 gqy22）
-#   - 好处：
-#     * 评论显示用户身份，不是 bot
-#     * 你的评论可以触发其他 workflow（如 @其他agent）
-#     * 更高权限，可访问私有仓库
+# PAT 配置（用于评论显示用户身份，必需）
+# - PAT_TOKEN
 
 # 配置说明：
 #
@@ -73,26 +56,18 @@ timeout_minutes: 15              # 可选：单次运行超时时间（分钟）
 #    - agents/your-github-id/prompt.md  (提示词文件)
 #    - 不需要子目录！
 #
-# 2. 智能体类型：
-#    - moderator：审核员，负责检查 Issue 完整性和协调流程
-#    - reviewer：评审员，对 Issue 进行深度评审
-#    - summarizer：总结员，汇总讨论内容
+# 2. 智能体职责：
+#    - 请在 description 中说明你的专业方向与评审关注点
 #
 # 3. 触发条件：
-#    - @mention：在 Issue 或评论中 @你的 GitHub 用户名或智能体名称
-#    - 关键词：在内容中包含指定关键词
-#    - auto_trigger：Issue 创建时自动运行（通常只用于 moderator）
+#    - @mention：在 Issue 或评论中 @你的 GitHub 用户名即可触发（等同 @owner）
 #
-# 4. 优先级：
-#    - 10：最高优先级（通常用于 moderator）
-#    - 5：默认优先级（大多数 reviewer）
-#    - 0：最低优先级
-#
-# 5. 标签过滤：
-#    - 如果设置了 labels_filter，智能体只会响应包含这些标签的 Issue
-#    - 如果不设置，会响应所有符合 triggers 的 Issue
-#
-# 6. 重要：repository 字段
+# 4. 重要：repository 字段
 #    - 必须设置为你自己的 fork 仓库（例如：your-github-id/IssueLab）
 #    - 这样智能体只会在你的仓库中触发
 #    - prompts/ 中的官方智能体配置为 "gqy20/IssueLab"，所以 fork 后不会触发
+#
+# 5. 功能开关：
+#    - enable_skills: 控制是否加载 Skills（.claude/skills）
+#    - enable_subagents: 控制是否加载 Subagents（.claude/agents）
+#    - enable_mcp: 控制是否启用 MCP 工具（.mcp.json）

@@ -113,3 +113,45 @@ def test_get_available_agents():
     assert "summarizer" in agents
     assert "observer" in agents
     assert len(agents) >= 5
+
+
+class TestDiscoverAgentsCache:
+    """测试 discover_agents 的缓存行为"""
+
+    def test_discover_agents_cache_reuse_and_invalidate(self, tmp_path, monkeypatch):
+        from issuelab.agents import discovery as discovery_mod
+
+        prompts_dir = tmp_path / "prompts"
+        agents_dir = tmp_path / "agents"
+        prompts_dir.mkdir()
+        agents_dir.mkdir()
+
+        prompt_path = prompts_dir / "moderator.md"
+        prompt_path.write_text(
+            "---\nagent: moderator\ndescription: test\n---\n# Moderator\nv1",
+            encoding="utf-8",
+        )
+
+        monkeypatch.setattr(discovery_mod, "PROMPTS_DIR", prompts_dir)
+        monkeypatch.setattr(discovery_mod, "AGENTS_DIR", agents_dir)
+
+        agents_v1 = discovery_mod.discover_agents()
+        agents_v1_again = discovery_mod.discover_agents()
+
+        assert agents_v1 is agents_v1_again
+        assert "moderator" in agents_v1
+        assert "v1" in agents_v1["moderator"]["prompt"]
+
+        prompt_path.write_text(
+            "---\nagent: moderator\ndescription: test\n---\n# Moderator\nv2",
+            encoding="utf-8",
+        )
+        # 确保 mtime 变化（避免文件系统时间粒度导致缓存未失效）
+        import os
+
+        new_mtime = prompt_path.stat().st_mtime + 2
+        os.utime(prompt_path, (new_mtime, new_mtime))
+
+        agents_v2 = discovery_mod.discover_agents()
+        assert agents_v2 is not agents_v1
+        assert "v2" in agents_v2["moderator"]["prompt"]

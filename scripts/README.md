@@ -127,7 +127,7 @@ if __name__ == "__main__":
    - `ISSUELAB_APP_ID`
    - `ISSUELAB_APP_PRIVATE_KEY`
 
-📖 **完整指南**：[docs/GITHUB_APP_SETUP.md](../docs/GITHUB_APP_SETUP.md)
+📖 **完整指南**：[docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md)
 
 #### 方式 2：Personal Access Token (PAT)
 
@@ -176,8 +176,7 @@ GitHub 的 `GITHUB_TOKEN` 有安全限制，无法触发其他仓库（包括 fo
 ---
 
 📖 **详细配置指南**：
-- GitHub App 配置：[docs/GITHUB_APP_SETUP.md](../docs/GITHUB_APP_SETUP.md)
-- Dispatch 配置：[docs/DISPATCH_SETUP.md](../docs/DISPATCH_SETUP.md)
+- 部署与 GitHub App 配置：[docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md)
 
 ### 支持的 Dispatch 模式
 

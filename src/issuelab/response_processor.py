@@ -9,104 +9,27 @@ Agent Response 后处理：解析 @mentions 并触发 dispatch
 import logging
 import os
 import subprocess
-from typing import Any, Literal, overload
+from typing import Any
 
 from issuelab.mention_policy import (
-    build_mention_section as _build_mention_section,
-    clean_mentions_in_text as _clean_mentions_in_text,
-    extract_mentions as _extract_mentions,
+    build_mention_section,
+    clean_mentions_in_text,
+    extract_mentions,
     filter_mentions,
 )
 
 logger = logging.getLogger(__name__)
 
-
-def extract_mentions(text: str) -> list[str]:
-    """
-    从文本中提取所有@mentions
-
-    Args:
-        text: 文本内容
-
-    Returns:
-        被@的用户名列表（去重）
-
-    Examples:
-        >>> extract_mentions("Hi @alice and @bob")
-        ['alice', 'bob']
-        >>> extract_mentions("@gqy22 please review")
-        ['gqy22']
-        >>> extract_mentions("No mentions here")
-        []
-    """
-    return _extract_mentions(text)
-
-
-def clean_mentions_in_text(text: str, replacement: str = "用户 {username}") -> str:
-    """清理文本中的所有 @mentions
-
-    将文本中的 @username 替换为指定格式，默认替换为 "用户 username"
-
-    Args:
-        text: 原始文本
-        replacement: 替换格式，可使用 {username} 占位符
-
-    Returns:
-        清理后的文本
-
-    Examples:
-        >>> clean_mentions_in_text("建议 @gqy20 确认设计")
-        '建议用户 gqy20 确认设计'
-        >>> clean_mentions_in_text("建议 @gqy20 确认", "{username}")
-        '建议 gqy20 确认'
-    """
-    return _clean_mentions_in_text(text, replacement=replacement)
-
-
-def build_mention_section(mentions: list[str], format_type: str = "labeled") -> str:
-    """构建 @ 区域
-
-    Args:
-        mentions: @mentions 列表
-        format_type: 格式类型
-            - labeled: "---\n相关人员: @user1 @user2"
-            - simple: "---\n@user1 @user2"
-            - list: "---\n协作请求:\n- @user1\n- @user2"
-
-    Returns:
-        @ 区域文本（如果 mentions 为空则返回空字符串）
-
-    Examples:
-        >>> build_mention_section(['gqy20', 'gqy22'])
-        '---\n相关人员: @gqy20 @gqy22'
-        >>> build_mention_section(['gqy20'], 'simple')
-        '---\n@gqy20'
-    """
-    return _build_mention_section(mentions, format_type=format_type)
-
-
-@overload
-def trigger_mentioned_agents(
-    response: str,
-    issue_number: int,
-    issue_title: str,
-    issue_body: str,
-    policy: dict | None = None,
-    *,
-    return_details: Literal[False] = False,
-) -> dict[str, bool]: ...
-
-
-@overload
-def trigger_mentioned_agents(
-    response: str,
-    issue_number: int,
-    issue_title: str,
-    issue_body: str,
-    policy: dict | None = None,
-    *,
-    return_details: Literal[True],
-) -> tuple[dict[str, bool], list[str], list[str]]: ...
+__all__ = [
+    "build_mention_section",
+    "clean_mentions_in_text",
+    "extract_mentions",
+    "filter_mentions",
+    "trigger_mentioned_agents",
+    "process_agent_response",
+    "should_auto_close",
+    "close_issue",
+]
 
 
 def trigger_mentioned_agents(
@@ -115,9 +38,7 @@ def trigger_mentioned_agents(
     issue_title: str,
     issue_body: str,
     policy: dict | None = None,
-    *,
-    return_details: bool = False,
-) -> dict[str, bool] | tuple[dict[str, bool], list[str], list[str]]:
+) -> tuple[dict[str, bool], list[str], list[str]]:
     """
     解析agent response中的@mentions，应用策略过滤，并触发允许的agent
 
@@ -129,14 +50,13 @@ def trigger_mentioned_agents(
         policy: @ 策略配置（None 则自动加载）
 
     Returns:
-        默认返回触发结果字典 {username: success}，以保持向后兼容。
-        当 return_details=True 时返回 (results, allowed_mentions, filtered_mentions) 元组。
+        (results, allowed_mentions, filtered_mentions)
     """
     mentions = extract_mentions(response)
 
     if not mentions:
         logger.info("[INFO] Response中没有@mentions")
-        return ({}, [], []) if return_details else {}
+        return {}, [], []
 
     logger.info(f"[INFO] 发现 {len(mentions)} 个@mentions: {mentions}")
 
@@ -148,7 +68,7 @@ def trigger_mentioned_agents(
 
     if not allowed_mentions:
         logger.info("[INFO] 没有允许的@mentions")
-        return ({}, [], filtered_mentions) if return_details else {}
+        return {}, [], filtered_mentions
 
     logger.info(f"[INFO] 允许触发 {len(allowed_mentions)} 个@mentions: {allowed_mentions}")
 
@@ -170,7 +90,7 @@ def trigger_mentioned_agents(
         else:
             logger.error(f"[ERROR] 触发 {username} 失败")
 
-    return (results, allowed_mentions, filtered_mentions) if return_details else results
+    return results, allowed_mentions, filtered_mentions
 
 
 def process_agent_response(
@@ -218,7 +138,7 @@ def process_agent_response(
     # 清理主体内容（将所有 @username 替换为 "用户 username"）
     clean_response = clean_mentions_in_text(response_text)
 
-    result = {
+    result: dict[str, Any] = {
         "agent_name": agent_name,
         "response": response_text,
         "clean_response": clean_response,
@@ -231,16 +151,9 @@ def process_agent_response(
     # 自动触发被@的agents
     if auto_dispatch and mentions:
         logger.info(f"🔗 {agent_name} 的response中@了 {len(mentions)} 个用户")
-        trigger_result = trigger_mentioned_agents(
-            response_text, issue_number, issue_title, issue_body, return_details=True
+        dispatch_results, allowed_mentions, filtered_mentions = trigger_mentioned_agents(
+            response_text, issue_number, issue_title, issue_body
         )
-
-        if isinstance(trigger_result, tuple) and len(trigger_result) == 3:
-            dispatch_results, allowed_mentions, filtered_mentions = trigger_result
-        else:
-            dispatch_results = trigger_result
-            allowed_mentions = list(dispatch_results.keys())
-            filtered_mentions = []
         result["dispatch_results"] = dispatch_results
         result["allowed_mentions"] = allowed_mentions
         result["filtered_mentions"] = filtered_mentions

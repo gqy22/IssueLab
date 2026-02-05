@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 from typing import Literal
 
-from issuelab.config import prepare_github_env
+from issuelab.config import Config
 from issuelab.logging_config import get_logger
 from issuelab.retry import retry_sync
 
@@ -17,7 +17,7 @@ MAX_COMMENT_LENGTH = 10000
 
 
 @retry_sync(max_retries=3, initial_delay=1.0, backoff_factor=2.0)
-def get_issue_info(issue_number: int, format_comments: bool = False) -> dict:
+def get_issue_info(issue_number: int, format_comments: bool = False, repo: str | None = None) -> dict:
     """获取 Issue 信息（带重试机制）
 
     Args:
@@ -29,10 +29,13 @@ def get_issue_info(issue_number: int, format_comments: bool = False) -> dict:
         如果 format_comments=True，comments 为格式化字符串，否则为原始列表
     """
     logger.debug(f"获取 Issue #{issue_number} 信息")
-    env = prepare_github_env()
+    env = Config.prepare_github_env()
 
+    cmd = ["gh", "issue", "view", str(issue_number), "--json", "number,title,body,labels,comments"]
+    if repo:
+        cmd.extend(["--repo", repo])
     result = subprocess.run(
-        ["gh", "issue", "view", str(issue_number), "--json", "number,title,body,labels,comments"],
+        cmd,
         capture_output=True,
         text=True,
         env=env,
@@ -154,12 +157,11 @@ def post_comment(
     Returns:
         是否成功发布
     """
-    env = prepare_github_env()
+    env = Config.prepare_github_env()
 
     # 自动清理和过滤 @mentions（集中式管理的核心）
     if mentions is None and auto_clean:
-        from issuelab.mention_policy import filter_mentions, rank_mentions_by_frequency
-        from issuelab.response_processor import clean_mentions_in_text
+        from issuelab.mention_policy import clean_mentions_in_text, filter_mentions, rank_mentions_by_frequency
 
         # 1. 提取所有 @mentions
         all_mentions = rank_mentions_by_frequency(body)
@@ -183,7 +185,7 @@ def post_comment(
 
     # 拼接 @ 区域
     if mentions:
-        from issuelab.response_processor import build_mention_section
+        from issuelab.mention_policy import build_mention_section
 
         mention_section = build_mention_section(mentions, format_type="labeled")
         final_body = f"{body}\n\n{mention_section}"
@@ -232,7 +234,7 @@ def update_label(issue_number: int, label: str, action: Literal["add", "remove"]
         是否成功更新
     """
     action_flag = "--add-label" if action == "add" else "--remove-label"
-    env = prepare_github_env()
+    env = Config.prepare_github_env()
 
     result = subprocess.run(
         ["gh", "issue", "edit", str(issue_number), action_flag, label],

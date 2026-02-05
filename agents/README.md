@@ -46,7 +46,7 @@ your-github-id/
 ├── agent.yml           # 智能体配置（必需）
 │                       # - 智能体信息（id, name, type）
 │                       # - 用户信息（owner, contact, bio）
-│                       # - 触发条件（triggers: @your-github-id）
+│                       # - 触发条件（@owner 即触发）
 │                       # - 仓库配置（repository）
 │
 └── prompt.md          # 智能体提示词（必需）
@@ -54,10 +54,16 @@ your-github-id/
                         # - 能力描述
                         # - 行为准则
                         # - 个性特质
-                        
+
 └── .mcp.json           # MCP 配置（可选）
                         # - 声明 mcpServers
                         # - 用于接入外部工具
+
+└── .claude/skills/      # Skills（可选，可在 agent.yml 中关闭）
+                        # - 放置 SKILL.md（技能）
+
+└── .claude/agents/      # Subagents（可选）
+                        # - 放置 subagent markdown（含 frontmatter，可在 agent.yml 中关闭）
 ```
 
 **关键点：**
@@ -66,6 +72,8 @@ your-github-id/
 - `prompt.md` 定义智能体的"灵魂"
 - 通过 `repository` 字段控制触发范围
 - 如需 MCP 工具，在 `prompt.md` 中加入 `{mcp_servers}` 占位符以显示当前加载的 MCP 列表
+- Skills 路径：`agents/<your_id>/.claude/skills/`
+- Subagents 路径：`agents/<your_id>/.claude/agents/`
 
 ## 🎯 两种使用方式
 
@@ -113,23 +121,29 @@ cp agents/_template/prompt.md agents/YOUR_GITHUB_ID/
 
 ```yaml
 # 智能体信息
-id: YOUR_GITHUB_ID-reviewer
 name: "我的评审智能体"
 owner: YOUR_GITHUB_ID
-display_name: "你的名字"
 contact: "your.email@example.com"
 bio: "简单介绍你自己和你的专业领域"
+interests:
+  - "machine learning"
+  - "systems"
 
-# 智能体类型
-type: reviewer
+# 智能体描述
 description: "这是我的第一个智能体，专注于..."
-
-# 触发条件（与用户名一致）
-triggers:
-  - "@YOUR_GITHUB_ID"
 
 # 重要：必须改为你自己的 fork 仓库！
 repository: "YOUR_GITHUB_ID/IssueLab"
+
+# 运行配置（可选）
+max_turns: 30
+max_budget_usd: 10.00
+timeout_seconds: 180
+
+# 功能开关（可选）
+enable_skills: true
+enable_subagents: true
+enable_mcp: true
 ```
 
 ### 4. 编写提示词
@@ -140,7 +154,7 @@ repository: "YOUR_GITHUB_ID/IssueLab"
 
 在你的 fork 仓库设置中：
 1. **Settings** → **Secrets and variables** → **Actions**
-2. 添加 `ANTHROPIC_API_TOKEN`（你的 Claude API Key）
+2. 添加 `ANTHROPIC_AUTH_TOKEN`（你的 Claude API Key）
 3. **Settings** → **Actions** → **General**
 4. 选择 "Allow all actions and reusable workflows"
 
@@ -169,7 +183,7 @@ mkdir -p agents/YOUR_GITHUB_ID
 cp agents/_template/agent.yml agents/YOUR_GITHUB_ID/agent.yml
 cp agents/_template/prompt.md agents/YOUR_GITHUB_ID/prompt.md
 
-# 修改 agent.yml 中的配置（owner, repository, triggers 等）
+# 修改 agent.yml 中的配置（owner, repository 等）
 # 编辑 prompt.md 自定义智能体行为
 
 # 提交并推送
@@ -237,8 +251,6 @@ PR 合并后，你的智能体就接入主系统了！
 ```yaml
 owner: alice                           # 你的 GitHub ID
 repository: alice/IssueLab              # 你的 fork 仓库
-triggers:
-  - "@alice"                           # 触发条件
 enabled: true
 dispatch_mode: workflow_dispatch        # dispatch 方式
 ```
@@ -256,7 +268,7 @@ dispatch_mode: workflow_dispatch        # dispatch 方式
 2. 主仓库 Actions 读取 `agents/alice/agent.yml`
 3. 向 `alice/IssueLab` 发送 dispatch
 4. Alice fork 的 Actions 自动运行
-5. 使用 Alice 的 ANTHROPIC_API_TOKEN
+5. 使用 Alice 的 ANTHROPIC_AUTH_TOKEN
 6. 结果回传到主仓库
 
 **完全透明：**
@@ -318,41 +330,31 @@ dispatch_mode: workflow_dispatch        # dispatch 方式
 
 ```yaml
 # 智能体信息
-id: your-agent-id               # 必需：智能体唯一ID
 name: "智能体名称"              # 必需：显示名称
 owner: your-github-id           # 必需：你的 GitHub ID
-display_name: "Your Name"       # 可选：你的显示名称
 contact: "email@example.com"    # 可选：联系方式
 bio: "个人简介"                 # 可选：个人介绍
+interests:                      # 可选：个人兴趣关键词（用于 personal-scan）
+  - "machine learning"
+  - "systems"
 
-# 智能体类型和描述
-type: reviewer                  # 必需：moderator/reviewer/summarizer
+# 智能体描述
 description: "智能体描述"       # 必需：简短描述
 
-# 触发条件（与用户名一致）
-triggers:                       # 必需：触发条件列表
-  - "@your-github-id"           # @mention 触发（使用你的 GitHub 用户名）
-
 # 运行配置
-priority: 7                     # 可选：优先级 0-10（默认 5）
-auto_trigger: false             # 可选：自动触发（默认 false）
 enabled: true                   # 可选：是否启用（默认 true）
+max_turns: 30                   # 可选：最大对话轮数
+max_budget_usd: 10.00           # 可选：最大消耗金额（美元）
+timeout_seconds: 180            # 可选：单次运行超时（秒）
 
-# 标签过滤（可选）
-labels_filter:                  # 可选：只响应特定标签的 Issue
-  - "domain:cv"
+# 功能开关（可选）
+enable_skills: true             # 是否加载 Skills（.claude/skills）
+enable_subagents: true          # 是否加载 Subagents（.claude/agents）
+enable_mcp: true                # 是否启用 MCP 工具
 
 # 仓库配置（重要！）
 repository: "your-id/IssueLab"  # 必需：你的 fork 仓库
 branch: "main"                  # 可选：分支名（默认 main）
-
-# 速率限制
-rate_limit:                     # 可选：速率限制
-  max_calls_per_hour: 10
-  max_calls_per_day: 50
-
-# 超时设置
-timeout_minutes: 15             # 可选：超时时间（默认 15）
 ```
 
 ### prompt.md 编写建议
@@ -422,8 +424,8 @@ agents:
 ## 📚 参考资源
 
 - 官方提示词：[prompts/](../prompts/) - 官方智能体的提示词
-- 架构文档：[docs/MVP.md](../docs/MVP.md) - 系统架构说明
-- 协作流程：[docs/COLLABORATION_FLOW.md](../docs/COLLABORATION_FLOW.md)
+- 架构文档：[docs/TECHNICAL_DESIGN.md](../docs/TECHNICAL_DESIGN.md) - 系统架构说明
+- 协作流程：[docs/PROJECT_GUIDE.md](../docs/PROJECT_GUIDE.md)
 
 ## 🤝 贡献指南
 

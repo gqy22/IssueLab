@@ -27,10 +27,12 @@ jobs:
       - name: Parse mentions from Issue
         if: github.event_name == 'issues'
         id: parse_issue
+        env:
+          ISSUE_BODY_JSON: ${{ toJson(github.event.issue.body) }}
         run: |
           # 使用临时文件避免多行内容的 shell 解析问题
           ISSUE_BODY_FILE=$(mktemp)
-          echo -n "${{ github.event.issue.body }}" > "$ISSUE_BODY_FILE"
+          python -c "import json, os; from pathlib import Path; content=json.loads(os.environ.get('ISSUE_BODY_JSON','\"\"')); Path(os.environ['ISSUE_BODY_FILE']).write_text(content or '', encoding='utf-8')"
 
           uv run python scripts/parse_mentions.py \
             --issue-body-file "$ISSUE_BODY_FILE" \
@@ -41,10 +43,13 @@ jobs:
       - name: Parse mentions from Comment
         if: github.event_name == 'issue_comment'
         id: parse_comment
+        env:
+          COMMENT_BODY_JSON: ${{ toJson(github.event.comment.body) }}
         run: |
           # 使用临时文件避免多行内容的 shell 解析问题
           COMMENT_BODY_FILE=$(mktemp)
-          echo -n "${{ github.event.comment.body }}" > "$COMMENT_BODY_FILE"
+          export COMMENT_BODY_FILE
+          python -c "import json, os; from pathlib import Path; content=json.loads(os.environ.get('COMMENT_BODY_JSON','\"\"')); Path(os.environ['COMMENT_BODY_FILE']).write_text(content or '', encoding='utf-8')"
 
           uv run python scripts/parse_mentions.py \
             --comment-body-file "$COMMENT_BODY_FILE" \
@@ -90,9 +95,10 @@ jobs:
                           triggers = config.get("triggers", [])
                           description = config.get("description", "")
 
-                          if username and triggers:
+                          if username:
+                              trigger_name = triggers[0] if triggers else f"@{username}"
                               agents_list.append({
-                                  "name": triggers[0] if triggers else f"@{username}",
+                                  "name": trigger_name,
                                   "description": description or f"{username} agent"
                               })
                   except Exception as e:
@@ -112,6 +118,15 @@ jobs:
       - name: Dispatch to user repositories
         id: dispatch
         continue-on-error: true  # 允许部分失败
+        env:
+          PYTHONPATH: ${{ github.workspace }}/src
+          GITHUB_APP_ID: ${{ secrets.ISSUELAB_APP_ID }}
+          GITHUB_APP_PRIVATE_KEY: ${{ secrets.ISSUELAB_APP_PRIVATE_KEY }}
+          LOG_FILE: ${{ github.workspace }}/logs/dispatch_${{ github.event.issue.number }}.log
+          LOG_LEVEL: DEBUG
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY_JSON: ${{ toJson(github.event.issue.body) }}
+          COMMENT_BODY_JSON: ${{ toJson(github.event.comment.body) }}
         run: |
           # 使用单引号包裹 JSON 以避免 bash 解析问题
           mentions='${{ steps.parse_issue.outputs.mentions || steps.parse_comment.outputs.mentions }}'
@@ -124,31 +139,26 @@ jobs:
           # 将多行内容写入临时文件，避免命令行参数解析问题
           ISSUE_BODY_FILE=$(mktemp)
           COMMENT_BODY_FILE=$(mktemp)
-          echo -n "${{ github.event.issue.body }}" > "$ISSUE_BODY_FILE"
-          echo -n "${{ github.event.comment.body }}" > "$COMMENT_BODY_FILE"
+          export ISSUE_BODY_FILE
+          export COMMENT_BODY_FILE
+          python -c "import json, os; from pathlib import Path; issue=json.loads(os.environ.get('ISSUE_BODY_JSON','\"\"')); comment=json.loads(os.environ.get('COMMENT_BODY_JSON','\"\"')); Path(os.environ['ISSUE_BODY_FILE']).write_text(issue or '', encoding='utf-8'); Path(os.environ['COMMENT_BODY_FILE']).write_text(comment or '', encoding='utf-8')"
 
           python -m issuelab.cli.dispatch \
             --mentions "$mentions" \
             --agents-dir agents \
             --source-repo "${{ github.repository }}" \
             --issue-number ${{ github.event.issue.number }} \
-            --issue-title "${{ github.event.issue.title }}" \
+            --issue-title "$ISSUE_TITLE" \
             --issue-body-file "$ISSUE_BODY_FILE" \
             ${{ github.event_name == 'issue_comment' && format('--comment-id {0}', github.event.comment.id) || '' }} \
             --comment-body-file "$COMMENT_BODY_FILE" \
             --labels '${{ steps.labels.outputs.labels }}' \
             --available-agents '${{ steps.collect_agents.outputs.agents }}' \
-            --use-github-app
+            --app-id "$GITHUB_APP_ID" \
+            --app-private-key "$GITHUB_APP_PRIVATE_KEY"
 
           # 清理临时文件
           rm -f "$ISSUE_BODY_FILE" "$COMMENT_BODY_FILE"
-        env:
-          PYTHONPATH: ${{ github.workspace }}/src
-          GITHUB_APP_ID: ${{ secrets.ISSUELAB_APP_ID }}
-          GITHUB_APP_PRIVATE_KEY: ${{ secrets.ISSUELAB_APP_PRIVATE_KEY }}
-          LOG_FILE: ${{ github.workspace }}/logs/dispatch_${{ github.event.issue.number }}.log
-          LOG_LEVEL: DEBUG
-
       - uses: actions/upload-artifact@v4
         with:
           name: dispatch-logs-${{ github.event.issue.number }}-${{ github.run_id }}
@@ -189,6 +199,7 @@ jobs:
           CLAUDE_CODE_STREAM_CLOSE_TIMEOUT: "30000"
           MCP_LOG_DETAIL: "1"
           PROMPT_LOG: "1"
+          ISSUELAB_TRIGGER_COMMENT: ${{ github.event.comment.body }}
 
       - name: Comment on dispatch failure
         if: steps.dispatch.outcome == 'failure' && steps.dispatch.outputs.dispatched_count == '0'

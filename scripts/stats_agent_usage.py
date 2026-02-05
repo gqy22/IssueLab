@@ -14,9 +14,9 @@ import json
 import os
 import re
 import subprocess
+import sys
 import tempfile
 from typing import Any
-import sys
 
 
 def run_cmd(cmd: list[str], timeout: int = 60) -> tuple[int, str, str]:
@@ -27,11 +27,9 @@ def run_cmd(cmd: list[str], timeout: int = 60) -> tuple[int, str, str]:
 
 def get_workflow_runs(limit: int = 50) -> list[dict]:
     """获取最近的 workflow runs"""
-    code, stdout, _ = run_cmd([
-        "gh", "run", "list",
-        "--limit", str(limit),
-        "--json", "number,name,status,conclusion,startedAt,workflowName"
-    ])
+    code, stdout, _ = run_cmd(
+        ["gh", "run", "list", "--limit", str(limit), "--json", "number,name,status,conclusion,startedAt,workflowName"]
+    )
     if code != 0:
         print(f"Error getting runs: {stdout}")
         return []
@@ -40,17 +38,15 @@ def get_workflow_runs(limit: int = 50) -> list[dict]:
 
 def get_workflow_jobs(run_id: str) -> list[dict]:
     """获取 workflow run 的所有 jobs"""
-    repo = os.getenv('GITHUB_REPOSITORY', 'gqy20/IssueLab')
-    code, stdout, _ = run_cmd([
-        "gh", "api",
-        f"repos/{repo}/actions/runs/{run_id}/jobs",
-        "--jq", "[.jobs[] | {name, id, status, conclusion}]"
-    ])
+    repo = os.getenv("GITHUB_REPOSITORY", "gqy20/IssueLab")
+    code, stdout, _ = run_cmd(
+        ["gh", "api", f"repos/{repo}/actions/runs/{run_id}/jobs", "--jq", "[.jobs[] | {name, id, status, conclusion}]"]
+    )
     if code != 0:
         return []
     try:
         return json.loads(stdout)
-    except:
+    except Exception:
         return []
 
 
@@ -70,12 +66,16 @@ def get_job_logs(run_id: str, job_name: str) -> str:
         return ""
 
     # 使用 API 获取单个 job 的日志
-    repo = os.getenv('GITHUB_REPOSITORY', 'gqy20/IssueLab')
-    code, stdout, _ = run_cmd([
-        "gh", "api",
-        f"repos/{repo}/actions/runs/{run_id}/logs",
-        "--jq", "."  # 直接获取原始响应
-    ])
+    repo = os.getenv("GITHUB_REPOSITORY", "gqy20/IssueLab")
+    code, stdout, _ = run_cmd(
+        [
+            "gh",
+            "api",
+            f"repos/{repo}/actions/runs/{run_id}/logs",
+            "--jq",
+            ".",  # 直接获取原始响应
+        ]
+    )
     if code != 0:
         return ""
 
@@ -89,7 +89,7 @@ def get_job_logs(run_id: str, job_name: str) -> str:
         # 如果没找到，返回第一个日志
         if logs_data:
             return list(logs_data.values())[0]
-    except:
+    except Exception:
         pass
 
     return ""
@@ -97,17 +97,15 @@ def get_job_logs(run_id: str, job_name: str) -> str:
 
 def get_run_artifacts(run_id: str) -> list[dict]:
     """获取 run 的 artifacts"""
-    repo = os.getenv('GITHUB_REPOSITORY', 'gqy20/IssueLab')
-    code, stdout, _ = run_cmd([
-        "gh", "api",
-        f"repos/{repo}/actions/runs/{run_id}/artifacts",
-        "--jq", "[.artifacts[] | {name, id}]"
-    ])
+    repo = os.getenv("GITHUB_REPOSITORY", "gqy20/IssueLab")
+    code, stdout, _ = run_cmd(
+        ["gh", "api", f"repos/{repo}/actions/runs/{run_id}/artifacts", "--jq", "[.artifacts[] | {name, id}]"]
+    )
     if code != 0:
         return []
     try:
         return json.loads(stdout)
-    except:
+    except Exception:
         return []
 
 
@@ -121,39 +119,39 @@ def parse_usage_from_log(log: str) -> dict[str, Any]:
         "total_input_tokens": 0,
         "total_output_tokens": 0,
         "total_tokens": 0,
-        "agents": {}
+        "agents": {},
     }
 
     # 匹配 agent 统计信息模式（本地运行格式）
     # [observer] [Stats] 成本: $0.1671, 轮数: 2, 工具调用: 1
-    local_pattern = r'\[(\w+)\] \[Stats\] 成本:\s*\$?([0-9.]+), 轮数: (\d+), 工具调用: (\d+)'
+    local_pattern = r"\[(\w+)\] \[Stats\] 成本:\s*\$?([0-9.]+), 轮数: (\d+), 工具调用: (\d+)"
     local_pattern_tokens = (
-        r'\[(\w+)\] \[Stats\] 成本:\s*\$?([0-9.]+), 轮数: (\d+), 工具调用: (\d+), '
-        r'输入Token: (\d+), 输出Token: (\d+), 总Token: (\d+)'
+        r"\[(\w+)\] \[Stats\] 成本:\s*\$?([0-9.]+), 轮数: (\d+), 工具调用: (\d+), "
+        r"输入Token: (\d+), 输出Token: (\d+), 总Token: (\d+)"
     )
 
     # 匹配完成日志（本地运行格式）
     # [observer] 完成 - 响应长度: 1149 字符, 成本: $0.1671, 轮数: 2, 工具调用: 1
-    local_complete_pattern = r'\[(\w+)\] 完成 - 响应长度: \d+ 字符, 成本:\s*\$?([0-9.]+), 轮数: (\d+), 工具调用: (\d+)'
+    local_complete_pattern = r"\[(\w+)\] 完成 - 响应长度: \d+ 字符, 成本:\s*\$?([0-9.]+), 轮数: (\d+), 工具调用: (\d+)"
     local_complete_pattern_tokens = (
-        r'\[(\w+)\] 完成 - 响应长度: \d+ 字符, 成本:\s*\$?([0-9.]+), 轮数: (\d+), 工具调用: (\d+), '
-        r'输入Token: (\d+), 输出Token: (\d+), 总Token: (\d+)'
+        r"\[(\w+)\] 完成 - 响应长度: \d+ 字符, 成本:\s*\$?([0-9.]+), 轮数: (\d+), 工具调用: (\d+), "
+        r"输入Token: (\d+), 输出Token: (\d+), 总Token: (\d+)"
     )
 
     # 匹配 GitHub Actions 格式（包含完整路径）
     # ... [executor.py:137] - [observer] [Stats] 成本: $0.1671, 轮数: 2, 工具调用: 1
-    actions_pattern = r'\]\s*\[(\w+)\] \[Stats\] 成本:\s*\$?([0-9.]+), 轮数: (\d+), 工具调用: (\d+)'
+    actions_pattern = r"\]\s*\[(\w+)\] \[Stats\] 成本:\s*\$?([0-9.]+), 轮数: (\d+), 工具调用: (\d+)"
     actions_pattern_tokens = (
-        r'\]\s*\[(\w+)\] \[Stats\] 成本:\s*\$?([0-9.]+), 轮数: (\d+), 工具调用: (\d+), '
-        r'输入Token: (\d+), 输出Token: (\d+), 总Token: (\d+)'
+        r"\]\s*\[(\w+)\] \[Stats\] 成本:\s*\$?([0-9.]+), 轮数: (\d+), 工具调用: (\d+), "
+        r"输入Token: (\d+), 输出Token: (\d+), 总Token: (\d+)"
     )
 
     # 匹配 Issue 完成日志
     # [Issue#1] observer 完成 - 成本: $0.1671, 轮数: 2, 工具: 1
-    issue_pattern = r'\[Issue#\d+\] (\w+) 完成 - 成本:\s*\$?([0-9.]+), 轮数: (\d+), 工具: (\d+)'
+    issue_pattern = r"\[Issue#\d+\] (\w+) 完成 - 成本:\s*\$?([0-9.]+), 轮数: (\d+), 工具: (\d+)"
     issue_pattern_tokens = (
-        r'\[Issue#\d+\] (\w+) 完成 - 成本:\s*\$?([0-9.]+), 轮数: (\d+), 工具: (\d+), '
-        r'输入Token: (\d+), 输出Token: (\d+), 总Token: (\d+)'
+        r"\[Issue#\d+\] (\w+) 完成 - 成本:\s*\$?([0-9.]+), 轮数: (\d+), 工具: (\d+), "
+        r"输入Token: (\d+), 输出Token: (\d+), 总Token: (\d+)"
     )
 
     # 去重记录已处理的 agent，避免重复计算
@@ -189,9 +187,13 @@ def parse_usage_from_log(log: str) -> dict[str, Any]:
 
             if agent not in stats["agents"]:
                 stats["agents"][agent] = {
-                    "runs": 0, "cost_usd": 0.0,
-                    "total_turns": 0, "total_tool_calls": 0,
-                    "input_tokens": 0, "output_tokens": 0, "total_tokens": 0
+                    "runs": 0,
+                    "cost_usd": 0.0,
+                    "total_turns": 0,
+                    "total_tool_calls": 0,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "total_tokens": 0,
                 }
 
             stats["agents"][agent]["runs"] += 1
@@ -223,7 +225,7 @@ def download_and_parse_artifacts(run_id: str) -> dict:
         "total_input_tokens": 0,
         "total_output_tokens": 0,
         "total_tokens": 0,
-        "agents": {}
+        "agents": {},
     }
 
     artifacts = get_run_artifacts(run_id)
@@ -247,12 +249,12 @@ def download_and_parse_artifacts(run_id: str) -> dict:
             run_cmd(["gh", "run", "download", artifact_id, "--dir", artifact_dir])
 
             # 解析下载的文件
-            for root, dirs, files in os.walk(artifact_dir):
+            for root, _dirs, files in os.walk(artifact_dir):
                 for filename in files:
                     if filename.endswith(".log"):
                         filepath = os.path.join(root, filename)
                         try:
-                            with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                            with open(filepath, encoding="utf-8", errors="ignore") as f:
                                 content = f.read()
 
                             parsed = parse_usage_from_log(content)
@@ -267,9 +269,13 @@ def download_and_parse_artifacts(run_id: str) -> dict:
                             for agent, agent_stats in parsed["agents"].items():
                                 if agent not in stats["agents"]:
                                     stats["agents"][agent] = {
-                                        "runs": 0, "cost_usd": 0.0,
-                                        "total_turns": 0, "total_tool_calls": 0,
-                                        "input_tokens": 0, "output_tokens": 0, "total_tokens": 0
+                                        "runs": 0,
+                                        "cost_usd": 0.0,
+                                        "total_turns": 0,
+                                        "total_tool_calls": 0,
+                                        "input_tokens": 0,
+                                        "output_tokens": 0,
+                                        "total_tokens": 0,
                                     }
                                 for k, v in agent_stats.items():
                                     stats["agents"][agent][k] += v
@@ -303,7 +309,7 @@ async def main():
         "total_tokens": 0,
         "agents": {},
         "workflows_analyzed": 0,
-        "artifacts_analyzed": 0
+        "artifacts_analyzed": 0,
     }
 
     # 分析每个 run
@@ -333,9 +339,13 @@ async def main():
             for agent, agent_stats in artifact_stats["agents"].items():
                 if agent not in total_stats["agents"]:
                     total_stats["agents"][agent] = {
-                        "runs": 0, "cost_usd": 0.0,
-                        "total_turns": 0, "total_tool_calls": 0,
-                        "input_tokens": 0, "output_tokens": 0, "total_tokens": 0
+                        "runs": 0,
+                        "cost_usd": 0.0,
+                        "total_turns": 0,
+                        "total_tool_calls": 0,
+                        "input_tokens": 0,
+                        "output_tokens": 0,
+                        "total_tokens": 0,
                     }
                 for k, v in agent_stats.items():
                     total_stats["agents"][agent][k] += v
@@ -356,7 +366,9 @@ async def main():
                 continue
 
             # 只分析 agent 相关的 jobs
-            if not any(keyword in job_name.lower() for keyword in ["agent", "moderator", "reviewer", "observer", "summarizer"]):
+            if not any(
+                keyword in job_name.lower() for keyword in ["agent", "moderator", "reviewer", "observer", "summarizer"]
+            ):
                 continue
 
             logs = get_job_logs(run_id, job_name)
@@ -371,9 +383,13 @@ async def main():
                 for agent, agent_stats in parsed["agents"].items():
                     if agent not in total_stats["agents"]:
                         total_stats["agents"][agent] = {
-                            "runs": 0, "cost_usd": 0.0,
-                            "total_turns": 0, "total_tool_calls": 0,
-                            "input_tokens": 0, "output_tokens": 0, "total_tokens": 0
+                            "runs": 0,
+                            "cost_usd": 0.0,
+                            "total_turns": 0,
+                            "total_tool_calls": 0,
+                            "input_tokens": 0,
+                            "output_tokens": 0,
+                            "total_tokens": 0,
                         }
                     for k, v in agent_stats.items():
                         total_stats["agents"][agent][k] += v
@@ -393,7 +409,7 @@ async def main():
     print("\n[3/3] 统计结果:")
     print("-" * 60)
 
-    print(f"\n分析时间范围: 最近 50 个 workflow runs")
+    print("\n分析时间范围: 最近 50 个 workflow runs")
     print(f"分析的工作流数: {total_stats['workflows_analyzed']}")
     print(f"解析的 artifacts 数: {total_stats['artifacts_analyzed']}")
 
@@ -408,7 +424,7 @@ async def main():
         print("  - 在用户仓库中运行此脚本")
         print("  - 查看 Actions 页面中的 Debug 日志")
 
-    print(f"\n总使用量 (当前仓库):")
+    print("\n总使用量 (当前仓库):")
     print(f"  - Agent 运行次数: {total_stats['runs_found']}")
     print(f"  - 总成本: ${total_stats['cost_usd']:.4f}")
     print(f"  - 总对话轮数: {total_stats['total_turns']}")
@@ -418,7 +434,7 @@ async def main():
     print(f"  - 总Token: {total_stats['total_tokens']}")
 
     if total_stats["agents"]:
-        print(f"\n按 Agent 统计:")
+        print("\n按 Agent 统计:")
         print(
             f"{'Agent':<20} {'运行次数':>8} {'成本(USD)':>12} {'轮数':>8} {'工具调用':>8} "
             f"{'输入Tok':>10} {'输出Tok':>10} {'总Tok':>10}"
@@ -450,7 +466,16 @@ def parse_local_input() -> dict:
     """从 stdin 解析本地运行日志"""
     log = sys.stdin.read()
     if not log:
-        return {'runs_found': 0, 'cost_usd': 0.0, 'total_turns': 0, 'total_tool_calls': 0, 'total_input_tokens': 0, 'total_output_tokens': 0, 'total_tokens': 0, 'agents': {}}
+        return {
+            "runs_found": 0,
+            "cost_usd": 0.0,
+            "total_turns": 0,
+            "total_tool_calls": 0,
+            "total_input_tokens": 0,
+            "total_output_tokens": 0,
+            "total_tokens": 0,
+            "agents": {},
+        }
     return parse_usage_from_log(log)
 
 
@@ -460,7 +485,7 @@ def print_stats(stats: dict):
     print("Agent 使用统计结果")
     print("=" * 60)
 
-    print(f"\n总使用量:")
+    print("\n总使用量:")
     print(f"  - Agent 运行次数: {stats['runs_found']}")
     print(f"  - 总成本: ${stats['cost_usd']:.4f}")
     print(f"  - 总对话轮数: {stats['total_turns']}")
@@ -469,16 +494,16 @@ def print_stats(stats: dict):
     print(f"  - 输出Token: {stats.get('total_output_tokens', 0)}")
     print(f"  - 总Token: {stats.get('total_tokens', 0)}")
 
-    if stats['agents']:
-        print(f"\n按 Agent 统计:")
+    if stats["agents"]:
+        print("\n按 Agent 统计:")
         print(
             f"{'Agent':<20} {'运行次数':>8} {'成本(USD)':>12} {'轮数':>8} {'工具调用':>8} "
             f"{'输入Tok':>10} {'输出Tok':>10} {'总Tok':>10}"
         )
         print("-" * 60)
 
-        for agent in sorted(stats['agents'].keys()):
-            s = stats['agents'][agent]
+        for agent in sorted(stats["agents"].keys()):
+            s = stats["agents"][agent]
             print(
                 f"{agent:<20} {s['runs']:>8} ${s['cost_usd']:>10.4f} {s['total_turns']:>8} "
                 f"{s['total_tool_calls']:>8} {s.get('input_tokens', 0):>10} {s.get('output_tokens', 0):>10} "
@@ -489,7 +514,7 @@ def print_stats(stats: dict):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == '--local':
+    if len(sys.argv) > 1 and sys.argv[1] == "--local":
         # 本地模式：从 stdin 读取
         stats = parse_local_input()
         print_stats(stats)

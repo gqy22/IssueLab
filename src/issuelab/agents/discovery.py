@@ -5,6 +5,7 @@
 
 import re
 from pathlib import Path
+from typing import Any
 
 # 统一 registry 读取
 from issuelab.agents.registry import load_registry
@@ -13,8 +14,39 @@ from issuelab.agents.registry import load_registry
 PROMPTS_DIR = Path(__file__).parent.parent.parent.parent / "prompts"
 AGENTS_DIR = Path(__file__).parent.parent.parent.parent / "agents"
 
+# 进程级缓存
+_CACHED_AGENTS: dict[str, dict[str, Any]] | None = None
+_CACHED_SIGNATURE: tuple[tuple[str, float], ...] | None = None
 
-def parse_agent_metadata(content: str) -> dict | None:
+
+def _get_discovery_signature() -> tuple:
+    """生成当前 prompts/agents 的签名（基于文件 mtime）"""
+    signature: list[tuple[str, float]] = []
+
+    if PROMPTS_DIR.exists():
+        for prompt_file in sorted(PROMPTS_DIR.glob("*.md")):
+            try:
+                signature.append((f"prompts/{prompt_file.name}", prompt_file.stat().st_mtime))
+            except OSError:
+                continue
+
+    if AGENTS_DIR.exists():
+        for user_dir in sorted(AGENTS_DIR.iterdir()):
+            if not user_dir.is_dir():
+                continue
+            for name in ("agent.yml", "prompt.md"):
+                path = user_dir / name
+                if not path.exists():
+                    continue
+                try:
+                    signature.append((f"agents/{user_dir.name}/{name}", path.stat().st_mtime))
+                except OSError:
+                    continue
+
+    return tuple(signature)
+
+
+def parse_agent_metadata(content: str) -> dict[str, str | list[str] | None] | None:
     """从 prompt 文件中解析 YAML 元数据
 
     格式：
@@ -32,9 +64,9 @@ def parse_agent_metadata(content: str) -> dict | None:
         return None
 
     yaml_str = match.group(1)
-    metadata = {}
-    current_list_key = None
-    current_list = []
+    metadata: dict[str, str | list[str] | None] = {}
+    current_list_key: str | None = None
+    current_list: list[str] = []
 
     # 解析 YAML
     for line in yaml_str.split("\n"):
@@ -74,7 +106,7 @@ def parse_agent_metadata(content: str) -> dict | None:
     return metadata if metadata else None
 
 
-def discover_agents() -> dict:
+def discover_agents() -> dict[str, dict[str, Any]]:
     """动态发现所有可用的 Agent
 
     通过读取 prompts 文件夹下的 .md 文件，解析 YAML 元数据
@@ -88,7 +120,13 @@ def discover_agents() -> dict:
             }
         }
     """
-    agents = {}
+    global _CACHED_AGENTS, _CACHED_SIGNATURE
+
+    signature = _get_discovery_signature()
+    if _CACHED_AGENTS is not None and signature == _CACHED_SIGNATURE:
+        return _CACHED_AGENTS
+
+    agents: dict[str, dict[str, Any]] = {}
 
     if not PROMPTS_DIR.exists():
         return agents
@@ -99,14 +137,20 @@ def discover_agents() -> dict:
         metadata = parse_agent_metadata(content)
 
         if metadata and "agent" in metadata:
-            agent_name = metadata["agent"]
+            agent_name_value = metadata.get("agent")
+            if not isinstance(agent_name_value, str) or not agent_name_value:
+                continue
+            agent_name = agent_name_value
             # 移除 frontmatter，获取纯 prompt 内容
             clean_content = re.sub(r"^---\n.*?\n---\n", "", content, flags=re.DOTALL).strip()
+            trigger_conditions = metadata.get("trigger_conditions", [])
+            if not isinstance(trigger_conditions, list):
+                trigger_conditions = []
 
             agents[agent_name] = {
                 "description": metadata.get("description", ""),
                 "prompt": clean_content,
-                "trigger_conditions": metadata.get("trigger_conditions", []),
+                "trigger_conditions": trigger_conditions,
             }
 
     # 扫描 agents 目录下的用户自定义 agent
@@ -123,12 +167,17 @@ def discover_agents() -> dict:
             prompt_content = prompt_file.read_text()
             prompt_content = re.sub(r"^---\n.*?\n---\n", "", prompt_content, flags=re.DOTALL).strip()
 
+            triggers = agent_config.get("triggers", [])
+            if not isinstance(triggers, list):
+                triggers = []
             agents[agent_name] = {
-                "description": agent_config.get("description", ""),
+                "description": str(agent_config.get("description", "")),
                 "prompt": prompt_content,
-                "trigger_conditions": agent_config.get("triggers", []),
+                "trigger_conditions": triggers,
             }
 
+    _CACHED_AGENTS = agents
+    _CACHED_SIGNATURE = signature
     return agents
 
 

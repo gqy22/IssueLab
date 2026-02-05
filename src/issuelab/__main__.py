@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import json
+import os
 import subprocess
 
 from issuelab.agents.discovery import discover_agents, get_agent_matrix_markdown
@@ -10,6 +11,7 @@ from issuelab.agents.executor import run_agents_parallel
 from issuelab.agents.observer import run_observer
 from issuelab.config import Config
 from issuelab.logging_config import get_logger, setup_logging
+from issuelab.tools import github as github_tools
 from issuelab.tools.github import get_issue_info, post_comment
 
 # 初始化日志
@@ -74,9 +76,6 @@ def main():
     observe_batch_parser.add_argument(
         "--auto-trigger", action="store_true", help="自动触发 agent（内置agent用label，用户agent用dispatch）"
     )
-    observe_batch_parser.add_argument(
-        "--post", action="store_true", help="自动发布触发评论到 Issue（已弃用，推荐使用 --auto-trigger）"
-    )
 
     # 列出所有可用 Agent
     subparsers.add_parser("list-agents", help="列出所有可用的 Agent")
@@ -122,10 +121,7 @@ def main():
         )
 
         # 构建上下文（改为文件引用，避免超长 prompt）
-        context = (
-            f"**Issue 内容文件**: {issue_file}\n"
-            "请使用 Read 工具读取该文件后再进行分析。"
-        )
+        context = f"**Issue 内容文件**: {issue_file}\n" "请使用 Read 工具读取该文件后再进行分析。"
         comment_count = issue_info["comment_count"]
         comments = issue_info["comments"]
 
@@ -146,7 +142,10 @@ def main():
 
         print(f"[START] 执行 agents: {agents}")
 
-        results = asyncio.run(run_agents_parallel(args.issue, agents, context, comment_count))
+        trigger_comment = os.environ.get("ISSUELAB_TRIGGER_COMMENT", "")
+        results = asyncio.run(
+            run_agents_parallel(args.issue, agents, context, comment_count, trigger_comment=trigger_comment)
+        )
 
         # 输出结果
         for agent_name, result in results.items():
@@ -168,7 +167,10 @@ def main():
     elif args.command == "review":
         # 顺序执行：moderator -> reviewer_a -> reviewer_b -> summarizer
         agents = ["moderator", "reviewer_a", "reviewer_b", "summarizer"]
-        results = asyncio.run(run_agents_parallel(args.issue, agents, context, comment_count))
+        trigger_comment = os.environ.get("ISSUELAB_TRIGGER_COMMENT", "")
+        results = asyncio.run(
+            run_agents_parallel(args.issue, agents, context, comment_count, trigger_comment=trigger_comment)
+        )
 
         for agent_name, result in results.items():
             response = result.get("response", str(result))
@@ -206,9 +208,7 @@ def main():
         )
         comments_ref = "历史评论已包含在同一文件中。" if issue_file else (comments or "无评论")
 
-        result = asyncio.run(
-            run_observer(args.issue, issue_info.get("title", ""), issue_body_ref, comments_ref)
-        )
+        result = asyncio.run(run_observer(args.issue, issue_info.get("title", ""), issue_body_ref, comments_ref))
 
         print(f"\n=== Observer Analysis for Issue #{args.issue} ===")
         print(f"\nAnalysis:\n{result.get('analysis', 'N/A')}")
@@ -241,31 +241,14 @@ def main():
         issue_data_list = []
         for issue_num in issue_numbers:
             try:
-                # 使用 gh 命令获取 Issue 详情
-                result = subprocess.run(
-                    ["gh", "issue", "view", str(issue_num), "--json", "title,body,comments"],
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                )
+                data = get_issue_info(issue_num, format_comments=True)
 
-                data = json.loads(result.stdout)
-
-                # 格式化评论
-                comments = []
-                for comment in data.get("comments", []):
-                    author = comment.get("author", {}).get("login", "unknown")
-                    body = comment.get("body", "")
-                    comments.append(f"- **[{author}]**: {body}")
-
-                from issuelab.tools.github import write_issue_context_file
-
-                issue_file = write_issue_context_file(
+                issue_file = github_tools.write_issue_context_file(
                     issue_number=issue_num,
                     title=data.get("title", ""),
                     body=data.get("body", ""),
-                    comments="\n".join(comments),
-                    comment_count=len(comments),
+                    comments=data.get("comments", ""),
+                    comment_count=data.get("comment_count", 0),
                 )
 
                 issue_data_list.append(
@@ -325,14 +308,6 @@ def main():
                         else:
                             print("  [ERROR] 自动触发失败")
 
-                # 如果需要，自动发布触发评论（已弃用，使用 auto_trigger 代替）
-                # auto_clean 会自动处理 @mentions
-                elif getattr(args, "post", False):
-                    comment = result.get("comment")
-                    if comment and post_comment(issue_num, comment):
-                        print("  [OK] 已发布触发评论（[WARNING] 注意：bot评论不会触发workflow）")
-                    else:
-                        print("  [ERROR] 发布评论失败")
             else:
                 print(f"  原因: {result.get('reason', 'N/A')}")
 
@@ -380,8 +355,6 @@ def main():
 
     elif args.command == "personal-reply":
         # 个人Agent回复主仓库issue
-        import os
-
         import yaml
 
         # 读取agent配置
@@ -444,7 +417,10 @@ def main():
 
         # 执行agent
         print(f"[START] 使用 {args.agent} 分析 {args.repo}#{args.issue}")
-        results = asyncio.run(run_agents_parallel(args.issue, [args.agent], context, 0, available_agents))
+        trigger_comment = os.environ.get("ISSUELAB_TRIGGER_COMMENT", "")
+        results = asyncio.run(
+            run_agents_parallel(args.issue, [args.agent], context, 0, available_agents, trigger_comment=trigger_comment)
+        )
 
         if args.agent not in results:
             print(f"[ERROR] Agent {args.agent} 执行失败")
@@ -458,15 +434,6 @@ def main():
 
         # 发布到主仓库（使用 post_comment 统一处理）
         if getattr(args, "post", False):
-            # 检查是否配置了PAT
-            gh_token = os.environ.get("GH_TOKEN", "")
-            if gh_token == os.environ.get("GITHUB_TOKEN", ""):
-                print(
-                    "\n[WARNING] 警告: 使用默认 GITHUB_TOKEN 可能无法跨仓库评论"
-                    "\n建议: 配置 PAT_TOKEN secret 以显示用户身份并获得完整权限"
-                    "\n详见: agents/_template/agent.yml 中的 GitHub Token 配置说明\n"
-                )
-
             # 使用 post_comment 统一处理（auto_clean 会自动处理 @mentions）
             if post_comment(args.issue, response, repo=args.repo):
                 print(f"[OK] 已发布到 {args.repo}#{args.issue}")

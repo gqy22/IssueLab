@@ -76,6 +76,18 @@ class TestExtractMentions:
         assert extract_mentions(text) == ["alice"]
 
 
+class TestMentionExports:
+    """确保 mention 工具函数集中于 mention_policy"""
+
+    def test_response_processor_exports_mention_policy_helpers(self):
+        """response_processor 应直接复用 mention_policy 的实现"""
+        from issuelab import mention_policy, response_processor
+
+        assert response_processor.extract_mentions is mention_policy.extract_mentions
+        assert response_processor.clean_mentions_in_text is mention_policy.clean_mentions_in_text
+        assert response_processor.build_mention_section is mention_policy.build_mention_section
+
+
 class TestTriggerMentionedAgents:
     """测试触发被@的agents"""
 
@@ -87,9 +99,11 @@ class TestTriggerMentionedAgents:
         mock_trigger.return_value = True
 
         response = "Hi @alice, please review"
-        results = trigger_mentioned_agents(response, 1, "Title", "Body")
+        results, allowed, filtered = trigger_mentioned_agents(response, 1, "Title", "Body")
 
         assert results == {"alice": True}
+        assert allowed == ["alice"]
+        assert filtered == []
         mock_trigger.assert_called_once_with(agent_name="alice", issue_number=1, issue_title="Title", issue_body="Body")
 
     @patch("issuelab.observer_trigger.auto_trigger_agent")
@@ -100,9 +114,11 @@ class TestTriggerMentionedAgents:
         mock_trigger.return_value = True
 
         response = "CC @bob and @charlie"
-        results = trigger_mentioned_agents(response, 2, "Title", "Body")
+        results, allowed, filtered = trigger_mentioned_agents(response, 2, "Title", "Body")
 
         assert results == {"bob": True, "charlie": True}
+        assert allowed == ["bob", "charlie"]
+        assert filtered == []
         assert mock_trigger.call_count == 2
 
     @patch("issuelab.observer_trigger.auto_trigger_agent")
@@ -111,9 +127,11 @@ class TestTriggerMentionedAgents:
         from issuelab.response_processor import trigger_mentioned_agents
 
         response = "@github and @github-actions please check"
-        results = trigger_mentioned_agents(response, 1, "Title", "Body")
+        results, allowed, filtered = trigger_mentioned_agents(response, 1, "Title", "Body")
 
         assert results == {}
+        assert allowed == []
+        assert filtered == ["github", "github-actions"]
         mock_trigger.assert_not_called()
 
     @patch("issuelab.observer_trigger.auto_trigger_agent")
@@ -124,9 +142,11 @@ class TestTriggerMentionedAgents:
         mock_trigger.return_value = True
 
         response = "@github-actions deployed by @alice"
-        results = trigger_mentioned_agents(response, 1, "Title", "Body")
+        results, allowed, filtered = trigger_mentioned_agents(response, 1, "Title", "Body")
 
         assert results == {"alice": True}
+        assert allowed == ["alice"]
+        assert filtered == ["github-actions"]
         mock_trigger.assert_called_once()
 
     @patch("issuelab.observer_trigger.auto_trigger_agent")
@@ -135,9 +155,11 @@ class TestTriggerMentionedAgents:
         from issuelab.response_processor import trigger_mentioned_agents
 
         response = "No mentions here"
-        results = trigger_mentioned_agents(response, 1, "Title", "Body")
+        results, allowed, filtered = trigger_mentioned_agents(response, 1, "Title", "Body")
 
         assert results == {}
+        assert allowed == []
+        assert filtered == []
         mock_trigger.assert_not_called()
 
     @patch("issuelab.observer_trigger.auto_trigger_agent")
@@ -148,9 +170,11 @@ class TestTriggerMentionedAgents:
         mock_trigger.return_value = False
 
         response = "@alice please check"
-        results = trigger_mentioned_agents(response, 1, "Title", "Body")
+        results, allowed, filtered = trigger_mentioned_agents(response, 1, "Title", "Body")
 
         assert results == {"alice": False}
+        assert allowed == ["alice"]
+        assert filtered == []
 
 
 class TestProcessAgentResponse:
@@ -161,7 +185,7 @@ class TestProcessAgentResponse:
         """处理字符串response"""
         from issuelab.response_processor import process_agent_response
 
-        mock_trigger.return_value = {"alice": True}
+        mock_trigger.return_value = ({"alice": True}, ["alice"], [])
 
         result = process_agent_response(
             agent_name="moderator",
@@ -181,7 +205,7 @@ class TestProcessAgentResponse:
         """处理字典response"""
         from issuelab.response_processor import process_agent_response
 
-        mock_trigger.return_value = {}
+        mock_trigger.return_value = ({}, [], [])
 
         result = process_agent_response(
             agent_name="echo",

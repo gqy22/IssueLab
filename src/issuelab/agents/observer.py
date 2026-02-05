@@ -3,6 +3,8 @@
 处理 Observer Agent 的特殊执行场景和批处理。
 """
 
+from typing import Any, Literal, overload
+
 import anyio
 
 from issuelab.agents.discovery import discover_agents, get_agent_matrix_markdown
@@ -43,18 +45,8 @@ async def run_observer(issue_number: int, issue_title: str = "", issue_body: str
             "error": "Observer agent not found",
         }
 
-    # 获取 prompt（移除 frontmatter）
-    prompt_template = observer_config["prompt"]
-    lines = prompt_template.split("\n")
-    content_lines = []
-    in_frontmatter = False
-    for line in lines:
-        if line.strip() == "---":
-            in_frontmatter = not in_frontmatter
-            continue
-        if not in_frontmatter:
-            content_lines.append(line)
-    prompt = "\n".join(content_lines)
+    # 获取 prompt（discover_agents 已移除 frontmatter）
+    prompt = observer_config["prompt"]
 
     # Issue 分析模式任务说明
     issue_task = """请分析以下 GitHub Issue 并决定是否需要触发其他 Agent：
@@ -216,7 +208,21 @@ def build_pubmed_papers_for_observer(papers: list[dict], query: str) -> str:
     return "\n".join(lines)
 
 
-async def run_observer_for_papers(papers: list[dict], return_result: bool = False) -> list[dict] | tuple[list[dict], dict]:
+@overload
+async def run_observer_for_papers(
+    papers: list[dict[str, Any]], return_result: Literal[False] = False
+) -> list[dict[str, Any]]: ...
+
+
+@overload
+async def run_observer_for_papers(
+    papers: list[dict[str, Any]], return_result: Literal[True]
+) -> tuple[list[dict[str, Any]], dict[str, Any]]: ...
+
+
+async def run_observer_for_papers(
+    papers: list[dict[str, Any]], return_result: bool = False
+) -> list[dict[str, Any]] | tuple[list[dict[str, Any]], dict[str, Any]]:
     """运行 arxiv_observer 分析 arXiv 论文列表
 
     Args:
@@ -240,18 +246,8 @@ async def run_observer_for_papers(papers: list[dict], return_result: bool = Fals
     # 构建论文上下文
     papers_context = build_papers_for_observer(papers)
 
-    # 获取 prompt（移除 frontmatter）
-    prompt_template = arxiv_observer_config["prompt"]
-    lines = prompt_template.split("\n")
-    content_lines = []
-    in_frontmatter = False
-    for line in lines:
-        if line.strip() == "---":
-            in_frontmatter = not in_frontmatter
-            continue
-        if not in_frontmatter:
-            content_lines.append(line)
-    prompt = "\n".join(content_lines)
+    # 获取 prompt（discover_agents 已移除 frontmatter）
+    prompt = arxiv_observer_config["prompt"]
 
     # 替换占位符
     prompt = prompt.replace("__PAPERS_CONTEXT__", papers_context)
@@ -276,9 +272,11 @@ async def run_observer_for_papers(papers: list[dict], return_result: bool = Fals
     # 从原始论文数据中获取完整信息
     recommended_papers = []
     for item in recommended_indices:
-        idx = item["index"]
-        if 0 <= idx < len(papers):
-            paper = papers[idx].copy()
+        idx_value = item.get("index", -1)
+        if not isinstance(idx_value, int):
+            continue
+        if 0 <= idx_value < len(papers):
+            paper = papers[idx_value].copy()
             paper["reason"] = item.get("reason", "")
             paper["summary"] = item.get("summary", paper.get("summary", ""))
             recommended_papers.append(paper)
@@ -289,9 +287,21 @@ async def run_observer_for_papers(papers: list[dict], return_result: bool = Fals
     return recommended_papers
 
 
+@overload
 async def run_pubmed_observer_for_papers(
-    papers: list[dict], query: str, return_result: bool = False
-) -> list[dict] | tuple[list[dict], dict]:
+    papers: list[dict[str, Any]], query: str, return_result: Literal[False] = False
+) -> list[dict[str, Any]]: ...
+
+
+@overload
+async def run_pubmed_observer_for_papers(
+    papers: list[dict[str, Any]], query: str, return_result: Literal[True]
+) -> tuple[list[dict[str, Any]], dict[str, Any]]: ...
+
+
+async def run_pubmed_observer_for_papers(
+    papers: list[dict[str, Any]], query: str, return_result: bool = False
+) -> list[dict[str, Any]] | tuple[list[dict[str, Any]], dict[str, Any]]:
     """运行 pubmed_observer 分析 PubMed 文献列表
 
     Args:
@@ -314,18 +324,8 @@ async def run_pubmed_observer_for_papers(
     # 构建文献上下文
     papers_context = build_pubmed_papers_for_observer(papers, query)
 
-    # 获取 prompt（移除 frontmatter）
-    prompt_template = pubmed_observer_config["prompt"]
-    lines = prompt_template.split("\n")
-    content_lines = []
-    in_frontmatter = False
-    for line in lines:
-        if line.strip() == "---":
-            in_frontmatter = not in_frontmatter
-            continue
-        if not in_frontmatter:
-            content_lines.append(line)
-    prompt = "\n".join(content_lines)
+    # 获取 prompt（discover_agents 已移除 frontmatter）
+    prompt = pubmed_observer_config["prompt"]
 
     # 替换占位符
     prompt = prompt.replace("__PAPERS_CONTEXT__", papers_context)
@@ -350,9 +350,11 @@ async def run_pubmed_observer_for_papers(
     # 从原始文献数据中获取完整信息
     recommended_papers = []
     for item in recommended_indices:
-        idx = item["index"]
-        if 0 <= idx < len(papers):
-            paper = papers[idx].copy()
+        idx_value = item.get("index", -1)
+        if not isinstance(idx_value, int):
+            continue
+        if 0 <= idx_value < len(papers):
+            paper = papers[idx_value].copy()
             paper["reason"] = item.get("reason", "")
             paper["summary"] = item.get("summary", "")
             recommended_papers.append(paper)
