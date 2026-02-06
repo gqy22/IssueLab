@@ -2,6 +2,11 @@
 
 > 面向 fork 用户的最短上手路径（5 步完成可用）
 
+## 快速演示视频
+
+- 部署演示：[`docs/assets/deploy.mp4`](./assets/deploy.mp4)
+- 使用演示：[`docs/assets/use.mp4`](./assets/use.mp4)
+
 ## 1. 五步启动
 
 1. **Fork 项目**
