@@ -371,3 +371,23 @@ confidence: "high"
         assert "## Summary" in normalized
         assert "## Key Findings" in normalized
         assert "## Recommended Actions" in normalized
+
+    def test_render_sources_section_from_yaml(self):
+        from issuelab.response_processor import normalize_comment_body
+
+        body = """```yaml
+summary: "S"
+findings:
+  - "F1"
+recommendations:
+  - "R1"
+sources:
+  - "https://example.com/a"
+  - "https://example.com/b"
+confidence: "high"
+```"""
+        normalized = normalize_comment_body(body, agent_name="gqy20")
+        assert "## Sources" in normalized
+        assert "https://example.com/a" in normalized
+        assert "https://example.com/b" in normalized
+        assert "```yaml" not in normalized

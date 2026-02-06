@@ -42,6 +42,7 @@ _DEFAULT_FORMAT_RULES = {
         "summary": "## Summary",
         "findings": "## Key Findings",
         "actions": "## Recommended Actions",
+        "sources": "## Sources",
         "structured": "## Structured (YAML)",
     },
     "limits": {
@@ -123,6 +124,33 @@ def _extract_yaml_block(text: str) -> str:
     return match.group(1).strip() if match else ""
 
 
+def _extract_sources_from_parsed_yaml(parsed: Any) -> list[str]:
+    if not isinstance(parsed, dict):
+        return []
+    raw_sources = parsed.get("sources", [])
+    urls: list[str] = []
+    if isinstance(raw_sources, list):
+        for item in raw_sources:
+            if isinstance(item, str):
+                urls.append(item.strip())
+            elif isinstance(item, dict):
+                url = str(item.get("url", "")).strip()
+                if url:
+                    urls.append(url)
+    elif isinstance(raw_sources, str):
+        urls.append(raw_sources.strip())
+
+    normalized: list[str] = []
+    for url in urls:
+        if not url:
+            continue
+        if not re.match(r"^https?://", url, re.IGNORECASE):
+            continue
+        if url not in normalized:
+            normalized.append(url)
+    return normalized
+
+
 def extract_mentions_from_yaml(response_text: str) -> list[str]:
     yaml_text = _extract_yaml_block(response_text)
     if not yaml_text:
@@ -166,6 +194,7 @@ def _normalize_agent_output(response_text: str, agent_name: str | None) -> tuple
     summary_marker = sections["summary"]
     findings_marker = sections["findings"]
     actions_marker = sections["actions"]
+    sources_marker = sections.get("sources", "## Sources")
     yaml_marker = sections["structured"]
     actions_aliases = [actions_marker, "## Recommendations"]
     yaml_aliases = [yaml_marker, "## Confidence"]
@@ -182,6 +211,7 @@ def _normalize_agent_output(response_text: str, agent_name: str | None) -> tuple
                 summary_line = str(parsed.get("summary", "")).strip()
                 findings_list = parsed.get("findings", []) if isinstance(parsed.get("findings"), list) else []
                 recs_list = parsed.get("recommendations", []) if isinstance(parsed.get("recommendations"), list) else []
+                sources_list = _extract_sources_from_parsed_yaml(parsed)
 
                 findings_count = int(limits.get("findings_count", 3))
                 actions_max = int(limits.get("actions_max_count", 2))
@@ -208,6 +238,9 @@ def _normalize_agent_output(response_text: str, agent_name: str | None) -> tuple
                     "",
                     actions_marker,
                     *(f"- [ ] {item}" for item in actions),
+                    "",
+                    sources_marker,
+                    *(f"- {item}" for item in sources_list),
                     "",
                     yaml_marker,
                     "```yaml",
@@ -299,6 +332,7 @@ def _normalize_agent_output(response_text: str, agent_name: str | None) -> tuple
 
     confidence = "medium"
     parsed_mentions: list[str] = []
+    parsed_sources: list[str] = []
     yaml_text = _extract_yaml_block(yaml_block)
     parsed = None
     if yaml_text:
@@ -311,6 +345,7 @@ def _normalize_agent_output(response_text: str, agent_name: str | None) -> tuple
             if parsed_confidence in {"high", "medium", "low"}:
                 confidence = parsed_confidence
             parsed_mentions = extract_mentions_from_yaml(response_text)
+            parsed_sources = _extract_sources_from_parsed_yaml(parsed)
 
     def _yaml_escape(value: str) -> str:
         return value.replace('"', '\\"')
@@ -346,6 +381,9 @@ def _normalize_agent_output(response_text: str, agent_name: str | None) -> tuple
             "",
             actions_marker,
             *(f"- [ ] {item}" for item in actions),
+            "",
+            sources_marker,
+            *(f"- {item}" for item in parsed_sources),
             "",
             yaml_marker,
             *yaml_lines,
@@ -487,6 +525,17 @@ def process_agent_response(
     raw_response_text = response_text
 
     normalized_response, format_warnings = _normalize_agent_output(response_text, agent_name)
+    if agent_name == "gqy20":
+        yaml_text = _extract_yaml_block(response_text)
+        parsed = None
+        if yaml_text:
+            try:
+                parsed = yaml.safe_load(yaml_text)
+            except Exception:
+                parsed = None
+        sources = _extract_sources_from_parsed_yaml(parsed)
+        if not sources:
+            format_warnings.append("Missing required sources URLs for gqy20")
     if format_warnings:
         logger.warning("Response format warnings for '%s': %s", agent_name, "; ".join(format_warnings))
     response_text = normalized_response

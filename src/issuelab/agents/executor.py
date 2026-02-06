@@ -4,10 +4,12 @@
 """
 
 import os
+import re
 import sys
 from typing import Any, cast
 
 import anyio
+import yaml
 from claude_agent_sdk import (
     AssistantMessage,
     ResultMessage,
@@ -248,6 +250,312 @@ async def run_single_agent_text(prompt: str, agent_name: str | None = None) -> s
     return result.get("response", "")
 
 
+def _extract_urls(text: str) -> list[str]:
+    """从文本中提取去重后的 URL 列表。"""
+    if not text:
+        return []
+    found = re.findall(r"https?://[^\s)>\]\"']+", text)
+    urls: list[str] = []
+    for url in found:
+        cleaned = url.rstrip(".,;:!?")
+        if cleaned not in urls:
+            urls.append(cleaned)
+    return urls
+
+
+def _extract_yaml_block(text: str) -> str:
+    match = re.search(r"```yaml(.*?)```", text, re.DOTALL | re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    return ""
+
+
+def _extract_sources_from_yaml(text: str) -> list[str]:
+    """从 YAML sources 字段提取 URL。"""
+    yaml_text = _extract_yaml_block(text)
+    if not yaml_text:
+        return []
+    try:
+        parsed = yaml.safe_load(yaml_text) or {}
+    except Exception:
+        return []
+    if not isinstance(parsed, dict):
+        return []
+    sources = parsed.get("sources", [])
+    urls: list[str] = []
+    if isinstance(sources, list):
+        for item in sources:
+            if isinstance(item, str):
+                urls.extend(_extract_urls(item))
+            elif isinstance(item, dict):
+                url_value = str(item.get("url", "")).strip()
+                if url_value:
+                    urls.extend(_extract_urls(url_value))
+    elif isinstance(sources, str):
+        urls.extend(_extract_urls(sources))
+
+    deduped: list[str] = []
+    for url in urls:
+        if url not in deduped:
+            deduped.append(url)
+    return deduped
+
+
+def _collect_source_urls(text: str) -> list[str]:
+    """优先从 YAML sources 收集，否则回退为全文 URL。"""
+    from_yaml = _extract_sources_from_yaml(text)
+    if from_yaml:
+        return from_yaml
+    return _extract_urls(text)
+
+
+def _is_gqy20_multistage_enabled(agent_name: str) -> bool:
+    if agent_name != "gqy20":
+        return False
+    return os.environ.get("ISSUELAB_GQY20_MULTISTAGE", "1").lower() not in {"0", "false", "no", "off"}
+
+
+async def _run_gqy20_multistage(agent_prompt: str, issue_number: int, task_context: str) -> dict[str, Any]:
+    """gqy20 专用多阶段流程：Researcher -> Analyst -> Critic -> Verifier -> Judge。"""
+    stages: dict[str, str] = {}
+    total_cost = 0.0
+    total_turns = 0
+    total_input_tokens = 0
+    total_output_tokens = 0
+    total_tokens = 0
+    tool_calls: list[str] = []
+
+    async def _run_stage(stage_name: str, task: str) -> str:
+        nonlocal total_cost, total_turns, total_input_tokens, total_output_tokens, total_tokens
+        stage_prompt = f"""{agent_prompt}
+
+---
+
+## Multi-Stage Workflow
+你正在执行 gqy20 的多阶段高质量流程。
+当前阶段：{stage_name}
+
+请严格遵守：
+- 优先大量使用可用工具进行检索、核验、对照
+- 不得在证据不足时给出确定性结论
+- 如涉及事实陈述，尽可能给出可追溯 URL
+
+## 当前任务
+{task}
+"""
+        result = await run_single_agent(stage_prompt, "gqy20")
+        total_cost += float(result.get("cost_usd", 0.0))
+        total_turns += int(result.get("num_turns", 0))
+        total_input_tokens += int(result.get("input_tokens", 0))
+        total_output_tokens += int(result.get("output_tokens", 0))
+        total_tokens += int(result.get("total_tokens", 0))
+        stage_tools = result.get("tool_calls", [])
+        if isinstance(stage_tools, list):
+            tool_calls.extend(str(t) for t in stage_tools)
+        text = str(result.get("response", "")).strip()
+        stages[stage_name] = text
+        return text
+
+    researcher_task = f"""
+请先只做“证据收集”，不要下最终结论。
+
+Issue #{issue_number} 上下文：
+{task_context}
+
+输出要求（YAML）：
+```yaml
+summary: ""
+evidence:
+  - claim: ""
+    source: ""
+    url: ""
+    confidence: "low|medium|high"
+open_questions:
+  - ""
+confidence: "low|medium|high"
+```
+"""
+    research_text = await _run_stage("Researcher", researcher_task)
+
+    analyst_task = f"""
+基于 Researcher 证据，产出 2-3 个候选结论版本（不要最终定稿）。
+
+Researcher 输出：
+{research_text}
+
+输出要求（YAML）：
+```yaml
+summary: ""
+candidates:
+  - id: "A"
+    summary: ""
+    findings:
+      - ""
+    recommendations:
+      - ""
+    sources:
+      - ""
+  - id: "B"
+    summary: ""
+    findings:
+      - ""
+    recommendations:
+      - ""
+    sources:
+      - ""
+confidence: "low|medium|high"
+```
+"""
+    analyst_text = await _run_stage("Analyst", analyst_task)
+
+    critic_task = f"""
+逐条批判 Analyst 候选结论，识别逻辑漏洞、证据缺口、过度推断和缺失引用。
+
+Researcher 输出：
+{research_text}
+
+Analyst 输出：
+{analyst_text}
+
+输出要求（YAML）：
+```yaml
+summary: ""
+criticisms:
+  - candidate_id: "A"
+    issues:
+      - ""
+    missing_evidence:
+      - ""
+confidence: "low|medium|high"
+```
+"""
+    critic_text = await _run_stage("Critic", critic_task)
+
+    verifier_task = f"""
+强制核验候选结论的来源链接与证据一致性。
+要求尽可能调用工具验证链接是否可访问、内容是否支持对应结论。
+
+Researcher 输出：
+{research_text}
+
+Analyst 输出：
+{analyst_text}
+
+Critic 输出：
+{critic_text}
+
+输出要求（YAML）：
+```yaml
+summary: ""
+verified_sources:
+  - url: ""
+    status: "verified|partially_verified|unverified"
+    supports:
+      - ""
+verification_gaps:
+  - ""
+confidence: "low|medium|high"
+```
+"""
+    verifier_text = await _run_stage("Verifier", verifier_task)
+
+    judge_base_task = f"""
+请综合 Researcher/Analyst/Critic/Verifier 结果，给出最终结论。
+
+要求：
+- 必须优先使用已核验来源
+- 必须输出可追溯链接（sources）
+- 对不确定项明确标注
+
+Researcher 输出：
+{research_text}
+
+Analyst 输出：
+{analyst_text}
+
+Critic 输出：
+{critic_text}
+
+Verifier 输出：
+{verifier_text}
+
+最终输出必须是 YAML：
+```yaml
+summary: ""
+findings:
+  - ""
+recommendations:
+  - ""
+sources:
+  - ""
+uncertainties:
+  - ""
+confidence: "low|medium|high"
+```
+"""
+
+    judge_text = ""
+    source_urls: list[str] = []
+    retry_feedback = ""
+    for attempt in range(3):
+        judge_task = judge_base_task
+        if retry_feedback:
+            judge_task += f"\n\n补充要求（第 {attempt + 1} 次尝试）：\n{retry_feedback}\n"
+        judge_text = await _run_stage("Judge", judge_task)
+        source_urls = _collect_source_urls(judge_text)
+        if source_urls:
+            break
+        retry_feedback = "上一版缺少可追溯来源链接。请补全 sources 字段，给出具体 URL，并确保关键结论可追溯。"
+
+    if not source_urls:
+        logger.warning("[gqy20] 多阶段结果缺少 sources，触发单阶段回退")
+        fallback_prompt = f"""{agent_prompt}
+
+---
+
+## 当前任务
+你需要分析 GitHub Issue #{issue_number}：
+
+{task_context}
+
+---
+
+输出要求（严格）：
+- 以 [Agent: gqy20] 开头
+- 必须给出可追溯来源链接（sources）
+- 证据不足的内容必须明确标注“不确定/缺证据”
+"""
+        fallback_result = await run_single_agent(fallback_prompt, "gqy20")
+        fallback_text = str(fallback_result.get("response", ""))
+        fallback_urls = _collect_source_urls(fallback_text)
+        if fallback_urls:
+            judge_text = fallback_text
+            total_cost += float(fallback_result.get("cost_usd", 0.0))
+            total_turns += int(fallback_result.get("num_turns", 0))
+            total_input_tokens += int(fallback_result.get("input_tokens", 0))
+            total_output_tokens += int(fallback_result.get("output_tokens", 0))
+            total_tokens += int(fallback_result.get("total_tokens", 0))
+            stage_tools = fallback_result.get("tool_calls", [])
+            if isinstance(stage_tools, list):
+                tool_calls.extend(str(t) for t in stage_tools)
+
+    unique_tools: list[str] = []
+    for tool in tool_calls:
+        if tool not in unique_tools:
+            unique_tools.append(tool)
+
+    return {
+        "response": judge_text,
+        "cost_usd": total_cost,
+        "num_turns": total_turns,
+        "tool_calls": unique_tools,
+        "input_tokens": total_input_tokens,
+        "output_tokens": total_output_tokens,
+        "total_tokens": total_tokens,
+        "stages": stages,
+    }
+
+
 async def run_agents_parallel(
     issue_number: int,
     agents: list[str],
@@ -379,7 +687,11 @@ async def run_agents_parallel(
             suffix = "..." if len(final_prompt) > max_len else ""
             logger.debug(f"[{agent_name}] [Prompt] length={len(final_prompt)}\\n{preview}{suffix}")
 
-        result = await run_single_agent(final_prompt, agent_name)
+        if _is_gqy20_multistage_enabled(agent_name):
+            logger.info(f"[Issue#{issue_number}] {agent_name} 启用多阶段流程")
+            result = await _run_gqy20_multistage(agent_prompt, issue_number, task_context)
+        else:
+            result = await run_single_agent(final_prompt, agent_name)
         results[agent_name] = result
         total_cost_local = result.get("cost_usd", 0.0)
         logger.info(
