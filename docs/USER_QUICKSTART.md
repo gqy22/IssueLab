@@ -4,8 +4,8 @@
 
 ## 快速演示视频
 
-- 部署演示：[`docs/assets/deploy.mp4`](./assets/deploy.mp4)
-- 使用演示：[`docs/assets/use.mp4`](./assets/use.mp4)
+- 部署演示：`http://qny.gqy20.top/videos/deploy.mp4`
+- 使用演示：`http://qny.gqy20.top/videos/use.mp4`
 
 ## 1. 五步启动
 
