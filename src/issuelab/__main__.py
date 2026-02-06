@@ -5,6 +5,7 @@ import asyncio
 import json
 import os
 import subprocess
+import sys
 
 from issuelab.agents.discovery import discover_agents, get_agent_matrix_markdown
 from issuelab.agents.executor import run_agents_parallel
@@ -330,14 +331,14 @@ def main():
             with open(agent_config_path) as f:
                 agent_config = yaml.safe_load(f)
         except FileNotFoundError:
-            print(f"[ERROR] 未找到agent配置: {agent_config_path}")
+            print(f"[ERROR] 未找到agent配置: {agent_config_path}", file=sys.stderr)
             return 1
 
         # 解析issue编号
         issue_numbers = [int(n.strip()) for n in args.issues.split(",") if n.strip().isdigit()]
 
         if not issue_numbers:
-            print("[ERROR] 未提供有效的issue编号")
+            print("[ERROR] 未提供有效的issue编号", file=sys.stderr)
             return 1
 
         # 扫描issues

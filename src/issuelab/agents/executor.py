@@ -4,6 +4,7 @@
 """
 
 import os
+import sys
 from typing import Any, cast
 
 import anyio
@@ -98,8 +99,8 @@ async def run_single_agent(prompt: str, agent_name: str) -> dict:
                         response_text.append(text)
                         execution_info["text_blocks"].append(text)
 
-                        # 终端流式输出
-                        print(text, end="", flush=True)
+                        # 终端流式输出（写入 stderr，避免污染 stdout）
+                        print(text, end="", flush=True, file=sys.stderr)
                         # 日志记录（INFO 级别）
                         logger.info(f"[{agent_name}] [Text] {text[:100]}...")
 
@@ -118,8 +119,8 @@ async def run_single_agent(prompt: str, agent_name: str) -> dict:
                         tool_calls.append(tool_name)
                         execution_info["tool_calls"].append(tool_name)
 
-                        # 终端输出
-                        print(f"\n[{tool_name}] id={tool_use_id}", end="", flush=True)
+                        # 终端输出（写入 stderr，避免污染 stdout）
+                        print(f"\n[{tool_name}] id={tool_use_id}", end="", flush=True, file=sys.stderr)
                         if tool_name == "Skill" or tool_name.startswith("Skill"):
                             logger.info(f"[{agent_name}] [Skill] {tool_name}(id={tool_use_id})")
                         if tool_name == "Task":
