@@ -196,8 +196,31 @@ async def llm_select_issues_async(
         logger.error(f"YAML解析结果非对象: {type(parsed)}")
         return {"selected_issues": [], "selections": [], "reasoning": "解析失败"}
     except yaml.YAMLError as e:
-        logger.error(f"YAML解析错误: {e}")
-        return {"selected_issues": [], "selections": [], "reasoning": f"错误: {e}"}
+        logger.error(f"YAML解析错误: {e}，尝试二次修复为严格JSON")
+
+    # 二次修复：让模型把原始输出转成严格JSON
+    repair_prompt = f"""请将下面的内容转换为严格JSON（仅一行），必须可被 json.loads 直接解析。
+禁止 markdown、禁止 YAML、禁止多余解释。仅输出JSON。
+
+目标格式：
+{{"selected_issues": [21], "selections": [{{"issue_number": 21, "priority": 9, "reason": "原因"}}], "reasoning": "说明"}}
+
+原始内容：
+{response_text}
+"""
+    repaired_text = await run_single_agent_text(repair_prompt, agent_name=agent_name or "personal_scan")
+    repaired_text = re.sub(r"```(?:json)?\s*", "", repaired_text)
+    repaired_text = re.sub(r"\s*```", "", repaired_text).strip()
+    match = re.search(r"\{.*\}", repaired_text, re.DOTALL)
+    if match:
+        try:
+            result = json.loads(match.group(0))
+            logger.info(f"[LLM] 修复后选择了 {len(result.get('selected_issues', []))} 个Issue")
+            return result
+        except json.JSONDecodeError as e:
+            logger.error(f"修复后的JSON解析错误: {e}")
+
+    return {"selected_issues": [], "selections": [], "reasoning": "解析失败"}
 
 
 def llm_select_issues(
