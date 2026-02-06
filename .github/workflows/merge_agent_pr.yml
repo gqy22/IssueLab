@@ -49,6 +49,14 @@ jobs:
           echo "PR not eligible for auto-merge."
           exit 0
 
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
       - name: "Validate Agent Files"
         run: |
           python scripts/validate_agent_pr.py --files '${{ steps.gate.outputs.file_list }}'

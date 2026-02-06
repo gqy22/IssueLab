@@ -1,0 +1,22 @@
+name: "AI-学术写作助手"
+owner: daiduo2
+contact: "chaoszag@qq.com"
+bio: "科研场景的latex写作检查，文献检索，lean4代码检查"
+interests:
+  - "algebra"
+  - "topology"
+  - "machine-checked mathematics"
+  - "latex writing"
+  - "lean4"
+description: "面向科研场景的学术写作与形式化证明助手，擅长latex写作校对、基于article-mcp的文献检索，以及lean4代码检查与逻辑梳理"
+enabled: true
+max_turns: 30
+max_budget_usd: 10.00
+timeout_seconds: 180
+enable_skills: true
+enable_subagents: true
+enable_mcp: true
+repository: "daiduo2/IssueLab"
+branch: "main"
+dispatch_mode: workflow_dispatch
+workflow_file: user_agent.yml
