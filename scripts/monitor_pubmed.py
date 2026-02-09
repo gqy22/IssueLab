@@ -465,6 +465,28 @@ def _fallback_extract_from_response(response_text: str, papers: list[dict[str, A
     return selected
 
 
+def _response_indicates_no_recommendation(response_text: str) -> bool:
+    """判断模型是否明确表达“本次不应推荐任何文献”。
+
+    避免在否定语境中仅因出现 PMID/DOI 被误判为推荐。
+    """
+    if not response_text:
+        return False
+
+    negative_patterns = [
+        r"无法推荐",
+        r"不推荐",
+        r"无(?:有效)?推荐",
+        r"推荐\s*0\s*篇",
+        r"完全不相关",
+        r"主题.*不相关",
+        r"no\s+recommendation",
+        r"not\s+recommend",
+        r"recommend(?:ed)?\s*:\s*0",
+    ]
+    return any(re.search(pattern, response_text, flags=re.IGNORECASE) for pattern in negative_patterns)
+
+
 def analyze_with_observer(papers: list[dict], query: str, token: str) -> list[dict]:
     """使用 Observer agent 分析文献，返回推荐的文献"""
 
@@ -488,6 +510,11 @@ def analyze_with_observer(papers: list[dict], query: str, token: str) -> list[di
         logger.debug("[Observer] 调用 run_pubmed_observer_for_papers...")
         recommended, raw_result = asyncio.run(run_pubmed_observer_for_papers(papers, query, return_result=True))
         response_text = str(raw_result.get("response", ""))
+
+        # 明确否定语境：不要因为出现 PMID/DOI 就误创建推荐 Issue。
+        if not recommended and _response_indicates_no_recommendation(response_text):
+            logger.info("[Observer] 响应明确表示不推荐，本次不创建推荐结果")
+            return []
 
         # YAML-first: 若结构化解析为空，回退提取 PMID/DOI/序号
         if not recommended:
