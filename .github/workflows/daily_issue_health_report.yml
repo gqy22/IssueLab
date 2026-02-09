@@ -44,15 +44,51 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: '3.13'
+          enable-cache: true
+      - run: uv sync
 
-      - name: Generate daily report
+      - name: Generate daily facts
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          python3 scripts/daily_issue_health_report.py \
+          uv run python scripts/daily_issue_health_report.py \
             --repo "${REPO_NAME}" \
             --hours "${HOURS}" \
-            --output artifacts/daily_issue_health_report.md
+            --output artifacts/daily_issue_health_facts.md \
+            --facts-output artifacts/daily_issue_health_facts.json
+
+      - name: Run ops_daily diagnosis
+        id: ops_daily
+        continue-on-error: true
+        env:
+          ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
+          MINIMAX_API_KEY: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL || 'https://api.minimaxi.com/anthropic' }}
+          ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL || 'MiniMax-M2.1' }}
+        run: |
+          set -euo pipefail
+          uv run python scripts/daily_issue_health_agent_report.py \
+            --facts artifacts/daily_issue_health_facts.json \
+            --output artifacts/daily_issue_health_agent.md \
+            --structured-output artifacts/daily_issue_health_agent.json
+
+      - name: Assemble final report
+        run: |
+          set -euo pipefail
+          {
+            cat artifacts/daily_issue_health_facts.md
+            echo ""
+            if [ -f artifacts/daily_issue_health_agent.md ]; then
+              cat artifacts/daily_issue_health_agent.md
+            else
+              echo "## 系统智能体诊断（ops_daily）"
+              echo ""
+              echo "> 当日诊断执行失败，已降级为仅发布 facts 报告。"
+            fi
+          } > artifacts/daily_issue_health_report.md
 
       - name: Add step summary
         run: |
@@ -91,5 +127,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: daily-issue-health-report-${{ github.run_id }}
-          path: artifacts/daily_issue_health_report.md
+          path: |
+            artifacts/daily_issue_health_report.md
+            artifacts/daily_issue_health_facts.json
+            artifacts/daily_issue_health_agent.json
           retention-days: 14

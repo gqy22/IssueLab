@@ -1,0 +1,25 @@
+# IssueLab 系统智能体配置 - ops_daily
+
+name: "ops_daily - 系统稳定性分析官"
+owner: ops_daily
+contact: "noreply@issuelab.local"
+bio: "系统级日报智能体，负责基于证据包分析稳定性、风险与待办"
+interests:
+  - "reliability engineering"
+  - "incident triage"
+  - "workflow stability"
+
+description: "系统级日报分析智能体：对 Issue 问答和 Actions 失败进行根因诊断，输出可执行整改清单"
+
+enabled: true
+max_turns: 60
+max_budget_usd: 5.00
+timeout_seconds: 240
+
+# 为降低漂移，日报分析默认禁用 Skills/Subagents/MCP，聚焦证据包推理
+enable_skills: false
+enable_subagents: false
+enable_mcp: false
+
+repository: "gqy20/IssueLab"
+branch: "main"

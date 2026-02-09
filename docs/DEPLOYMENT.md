@@ -146,6 +146,19 @@ gh api /app/installations --jq '.[] | {account: .account.login, id: .id}'
 
 > 日报工作流 `Daily Issue Health Report` 会优先读取该变量并自动发帖到专用日报 Discussion，便于按天回溯。
 
+### 3.1.2 每日日报智能体链路（ops_daily）
+
+`Daily Issue Health Report` 已升级为两层：
+
+1. **facts 层（gh 元数据采集）**
+   - 通过 `gh api` 拉取 Issue、评论、Actions runs、失败 job/step
+   - 输出 `artifacts/daily_issue_health_facts.json`
+2. **analysis 层（系统智能体诊断）**
+   - `ops_daily` 基于 facts 生成根因、风险和行动项
+   - 输出 `artifacts/daily_issue_health_agent.md/.json`
+
+发布时会自动合并两层报告；若智能体当天失败，会降级为仅发布 facts，保证日报不中断。
+
 > 💡 **提示**：也可以使用智谱 GLM Coding Plan，在智谱开放平台（https://open.bigmodel.cn/）申请后，将 API Token 填入 `ANTHROPIC_AUTH_TOKEN`，`ANTHROPIC_BASE_URL` 设为智普 API 地址。
 
 **添加 Private Key 的正确方式：**
