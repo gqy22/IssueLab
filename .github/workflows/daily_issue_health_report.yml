@@ -1,0 +1,84 @@
+name: Daily Issue Health Report
+
+on:
+  schedule:
+    - cron: "30 23 * * *"
+  workflow_dispatch:
+    inputs:
+      hours:
+        description: "Lookback hours"
+        required: false
+        default: "24"
+        type: string
+      discussion_number:
+        description: "Discussion number to publish report"
+        required: false
+        default: ""
+        type: string
+      publish_comment:
+        description: "Publish report to discussion"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+permissions:
+  contents: read
+  issues: read
+  actions: read
+  discussions: write
+
+env:
+  REPO_NAME: ${{ github.repository }}
+  HOURS: ${{ github.event.inputs.hours || '24' }}
+  DISCUSSION_NUMBER: ${{ github.event.inputs.discussion_number || vars.DAILY_REPORT_DISCUSSION_NUMBER || '' }}
+  PUBLISH_COMMENT: ${{ github.event.inputs.publish_comment || 'true' }}
+  GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+
+jobs:
+  report:
+    if: github.repository == 'gqy20/IssueLab'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate daily report
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          python3 scripts/daily_issue_health_report.py \
+            --repo "${REPO_NAME}" \
+            --hours "${HOURS}" \
+            --output artifacts/daily_issue_health_report.md
+
+      - name: Add step summary
+        run: |
+          cat artifacts/daily_issue_health_report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish to discussion
+        if: ${{ env.PUBLISH_COMMENT != 'false' && env.DISCUSSION_NUMBER != '' }}
+        run: |
+          set -euo pipefail
+          REPO_OWNER="${{ github.repository_owner }}"
+          REPO_SHORT="${{ github.event.repository.name }}"
+          DISC_ID=$(gh api graphql \
+            -f query='query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){discussion(number:$number){id}}}' \
+            -f owner="${REPO_OWNER}" \
+            -f name="${REPO_SHORT}" \
+            -F number="${DISCUSSION_NUMBER}" \
+            --jq '.data.repository.discussion.id')
+
+          BODY="<!-- issuelab-daily-report -->"$'\n'"$(cat artifacts/daily_issue_health_report.md)"
+          gh api graphql \
+            -f query='mutation($discussionId:ID!,$body:String!){addDiscussionComment(input:{discussionId:$discussionId,body:$body}){comment{url}}}' \
+            -f discussionId="${DISC_ID}" \
+            -f body="${BODY}"
+
+      - name: Upload report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-issue-health-report-${{ github.run_id }}
+          path: artifacts/daily_issue_health_report.md
+          retention-days: 14
