@@ -129,11 +129,13 @@ jobs:
           ISSUE_BODY_JSON: ${{ toJson(github.event.issue.body) }}
           COMMENT_BODY_JSON: ${{ toJson(github.event.comment.body) }}
         run: |
+          mkdir -p artifacts/observability
           # 使用单引号包裹 JSON 以避免 bash 解析问题
           mentions='${{ steps.parse_issue.outputs.mentions || steps.parse_comment.outputs.mentions }}'
 
           if [ -z "$mentions" ] || [ "$mentions" = "[]" ]; then
             echo "No mentions found, skipping dispatch"
+            : > artifacts/observability/dispatch_cli.log
             exit 0
           fi
 
@@ -156,7 +158,7 @@ jobs:
             --labels '${{ steps.labels.outputs.labels }}' \
             --available-agents '${{ steps.collect_agents.outputs.agents }}' \
             --app-id "$GITHUB_APP_ID" \
-            --app-private-key "$GITHUB_APP_PRIVATE_KEY"
+            --app-private-key "$GITHUB_APP_PRIVATE_KEY" 2>&1 | tee artifacts/observability/dispatch_cli.log
 
           # 清理临时文件
           rm -f "$ISSUE_BODY_FILE" "$COMMENT_BODY_FILE"
@@ -176,19 +178,38 @@ jobs:
 
       # 本地执行主仓库 Agents
       - name: Run local agents
+        id: run_local
         if: steps.dispatch.outputs.local_agents != '[]' && steps.dispatch.outputs.local_agents != ''
         run: |
+          set +e
           LOCAL_AGENTS='${{ steps.dispatch.outputs.local_agents }}'
           echo "Running local agents: $LOCAL_AGENTS"
+          local_total=$(echo "$LOCAL_AGENTS" | jq 'length')
+          local_success=0
+          local_failed=0
 
           # 解析 JSON 数组并逐个执行
-          echo "$LOCAL_AGENTS" | jq -r '.[]' | while read -r agent; do
+          while read -r agent; do
             echo "[LOCAL] Executing agent: $agent"
             uv run python -m issuelab execute \
               --issue ${{ github.event.issue.number }} \
               --agents "$agent" \
-              --post || echo "[WARNING] Failed to run $agent locally"
-          done
+              --post
+            code=$?
+            if [ $code -eq 0 ]; then
+              local_success=$((local_success+1))
+            else
+              local_failed=$((local_failed+1))
+              echo "[WARNING] Failed to run $agent locally"
+            fi
+          done < <(echo "$LOCAL_AGENTS" | jq -r '.[]')
+
+          {
+            echo "total=$local_total"
+            echo "success=$local_success"
+            echo "failed=$local_failed"
+          } >> "$GITHUB_OUTPUT"
+          set -e
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
           ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
@@ -201,6 +222,159 @@ jobs:
           MCP_LOG_DETAIL: "1"
           PROMPT_LOG: "1"
           ISSUELAB_TRIGGER_COMMENT: ${{ github.event.comment.body }}
+
+      - name: Emit observability summary
+        if: always()
+        env:
+          WF_NAME: ${{ github.workflow }}
+          JOB_NAME: dispatch
+          RUN_ID: ${{ github.run_id }}
+          REPO_NAME: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          PARSE_ISSUE_OUTCOME: ${{ steps.parse_issue.outcome }}
+          PARSE_COMMENT_OUTCOME: ${{ steps.parse_comment.outcome }}
+          DISPATCH_OUTCOME: ${{ steps.dispatch.outcome }}
+          MENTIONS_COUNT_ISSUE: ${{ steps.parse_issue.outputs.count }}
+          MENTIONS_COUNT_COMMENT: ${{ steps.parse_comment.outputs.count }}
+          MATCHED_TOTAL: ${{ steps.dispatch.outputs.total_count }}
+          DISPATCHED_COUNT: ${{ steps.dispatch.outputs.dispatched_count }}
+          LOCAL_TOTAL: ${{ steps.run_local.outputs.total }}
+          LOCAL_SUCCESS: ${{ steps.run_local.outputs.success }}
+          LOCAL_FAILED: ${{ steps.run_local.outputs.failed }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/observability
+
+          python - << 'PY'
+          import json
+          import os
+          import re
+          from collections import Counter
+          from datetime import UTC, datetime
+          from pathlib import Path
+
+          def to_int(v: str | None) -> int:
+            try:
+              return int(v or "0")
+            except Exception:
+              return 0
+
+          mentions_count = to_int(os.getenv("MENTIONS_COUNT_ISSUE")) + to_int(os.getenv("MENTIONS_COUNT_COMMENT"))
+          matched_total = to_int(os.getenv("MATCHED_TOTAL"))
+          dispatched = to_int(os.getenv("DISPATCHED_COUNT"))
+          local_total = to_int(os.getenv("LOCAL_TOTAL"))
+          local_success = to_int(os.getenv("LOCAL_SUCCESS"))
+          local_failed = to_int(os.getenv("LOCAL_FAILED"))
+
+          # Standardized counters
+          # dispatched_count 已包含“本地 agent 预记成功”，因此需扣除本地失败以得到真实成功数。
+          input_count = mentions_count
+          success_count = max(dispatched - local_failed, 0)
+          failed_count = max(matched_total - success_count, 0)
+          skipped_count = 0
+
+          # Parse failure codes from dispatch CLI output
+          counters = Counter()
+          samples: dict[str, list[str]] = {}
+          log_path = Path("artifacts/observability/dispatch_cli.log")
+          if log_path.exists():
+            for line in log_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+              m = re.search(r"^\s*-\s*([a-zA-Z0-9_-]+):\s*([A-Z0-9_]+)\s*$", line)
+              if not m:
+                continue
+              user = m.group(1)
+              code = m.group(2)
+              counters[code] += 1
+              samples.setdefault(code, [])
+              if len(samples[code]) < 3:
+                samples[code].append(user)
+
+          # Step-level fallback reasons
+          if os.getenv("PARSE_ISSUE_OUTCOME") == "failure" or os.getenv("PARSE_COMMENT_OUTCOME") == "failure":
+            counters["PARSE_FAILED"] += 1
+          if os.getenv("DISPATCH_OUTCOME") == "failure" and not counters:
+            counters["DISPATCH_FAILED"] += 1
+          if local_failed > 0:
+            counters["LOCAL_AGENT_FAILED"] += local_failed
+
+          failures_topn = []
+          for code, count in counters.most_common(5):
+            failures_topn.append(
+              {
+                "code": code,
+                "count": count,
+                "samples": samples.get(code, []),
+              }
+            )
+
+          status = "success"
+          if failed_count > 0 and success_count > 0:
+            status = "partial"
+          elif success_count == 0 and (failed_count > 0 or os.getenv("DISPATCH_OUTCOME") == "failure"):
+            status = "failure"
+
+          payload = {
+            "schema_version": "v1",
+            "workflow": os.getenv("WF_NAME"),
+            "job": os.getenv("JOB_NAME"),
+            "run_id": os.getenv("RUN_ID"),
+            "repo": os.getenv("REPO_NAME"),
+            "sha": os.getenv("SHA"),
+            "event_name": os.getenv("EVENT_NAME"),
+            "issue_number": os.getenv("ISSUE_NUMBER"),
+            "finished_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "metrics": {
+              "input_count": input_count,
+              "matched_count": matched_total,
+              "success_count": success_count,
+              "failed_count": failed_count,
+              "skipped_count": skipped_count,
+              "dispatch_success_count": dispatched,
+              "local_total": local_total,
+              "local_success": local_success,
+              "local_failed": local_failed,
+            },
+            "failures_topn": failures_topn,
+            "status": status,
+          }
+
+          out = Path("artifacts/observability/dispatch__job.json")
+          out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+          summary_lines = [
+            "## Observability (dispatch)",
+            "",
+            "| metric | value |",
+            "|---|---:|",
+            f"| input_count | {payload['metrics']['input_count']} |",
+            f"| matched_count | {payload['metrics']['matched_count']} |",
+            f"| success_count | {payload['metrics']['success_count']} |",
+            f"| failed_count | {payload['metrics']['failed_count']} |",
+            f"| skipped_count | {payload['metrics']['skipped_count']} |",
+            f"| status | {payload['status']} |",
+            "",
+            "### Failure TopN",
+          ]
+          if failures_topn:
+            for item in failures_topn:
+              sample = ", ".join(item.get("samples", []))
+              summary_lines.append(f"- `{item['code']}`: {item['count']} ({sample})")
+          else:
+            summary_lines.append("- none")
+
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
+            fh.write("\n".join(summary_lines) + "\n")
+          PY
+
+      - name: Upload observability artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dispatch-observability-${{ github.event.issue.number }}-${{ github.run_id }}
+          path: artifacts/observability/
+          retention-days: 14
 
       - name: Comment on dispatch failure
         if: steps.dispatch.outcome == 'failure' && steps.dispatch.outputs.dispatched_count == '0'
