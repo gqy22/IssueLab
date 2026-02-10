@@ -40,6 +40,8 @@ permissions:
 
 jobs:
   discover:
+    # 默认禁用：仅当仓库变量 ENABLE_STARGAZER_OUTREACH=true 时执行
+    if: vars.ENABLE_STARGAZER_OUTREACH == 'true'
     runs-on: ubuntu-latest
     outputs:
       has_candidates: ${{ steps.pick.outputs.has_candidates }}
@@ -234,6 +236,7 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
           claude_args: |
             --model ${{ env.ANTHROPIC_MODEL }}
+            --allowedTools Write,Bash(ls),Bash(cat),Bash(test),Bash(echo),Bash(mkdir)
           prompt: |
             Read:
             - .github/prompts/stargazer_outreach.md
@@ -254,10 +257,20 @@ jobs:
             - IN_ORG=${{ env.IN_ORG }}
             - ORG_NAME=${{ env.ORG_NAME }}
 
+      - name: Verify generated outputs
+        run: |
+          set -euo pipefail
+          [ -s artifacts/analysis.md ] || { echo "Missing artifacts/analysis.md"; exit 1; }
+          [ -s artifacts/invitation.md ] || { echo "Missing artifacts/invitation.md"; exit 1; }
+
       - name: Post invitation to discussion
         if: ${{ github.event.inputs.publish_comment != 'false' }}
         run: |
           set -euo pipefail
+          if [ ! -s artifacts/invitation.md ]; then
+            echo "Skip posting: artifacts/invitation.md not found"
+            exit 0
+          fi
           DISC_ID=$(gh api graphql -f query='query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){discussion(number:$number){id}}}' -f owner="${REPO_OWNER}" -f name="${REPO_NAME}" -F number="${DISCUSSION_NUMBER}" --jq '.data.repository.discussion.id')
           BODY="<!-- issuelab-outreach:${TARGET_USERNAME} -->"$'\n'"$(cat artifacts/invitation.md)"
           gh api graphql \
@@ -276,6 +289,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload candidate artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: stargazer-outreach-${{ github.run_id }}-${{ matrix.candidate.target_username }}
