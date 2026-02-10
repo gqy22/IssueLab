@@ -32,7 +32,17 @@ logger = get_logger(__name__)
 
 _SYSTEM_EXECUTION_TIMEOUT_SECONDS = 600
 
-_OUTPUT_SCHEMA_BLOCK = (
+_OUTPUT_SCHEMA_BLOCK_MARKDOWN = (
+    "\n\n## Output Format (required)\n"
+    "请使用 Markdown 输出，禁止输出 YAML/JSON 代码块。\n\n"
+    "请严格使用以下结构：\n"
+    "- `## Summary`：1-3 句结论\n"
+    "- `## Key Findings`：2-5 条要点（列表）\n"
+    "- `## Recommended Actions`：1-5 条可执行动作（任务列表）\n"
+    "- 如需触发协作，仅在文末使用受控区：`---\\n相关人员: @user1 @user2` 或 `协作请求:` 列表\n"
+)
+
+_OUTPUT_SCHEMA_BLOCK_YAML = (
     "\n\n## Output Format (required)\n"
     "优先输出以下 YAML；若无法稳定产出 YAML，可降级为结构化 Markdown（Summary/Findings/Recommendations）：\n\n"
     "```yaml\n"
@@ -60,11 +70,13 @@ def _should_retry_run_exception(exc: Exception) -> bool:
     return not isinstance(exc, TimeoutError | asyncio.CancelledError)
 
 
-def _append_output_schema(prompt: str) -> str:
+def _append_output_schema(prompt: str, stage_name: str | None = None) -> str:
     """为 prompt 注入统一输出格式（如果尚未注入）。"""
     if "## Output Format (required)" in prompt:
         return prompt
-    return f"{prompt}{_OUTPUT_SCHEMA_BLOCK}"
+    if stage_name:
+        return f"{prompt}{_OUTPUT_SCHEMA_BLOCK_YAML}"
+    return f"{prompt}{_OUTPUT_SCHEMA_BLOCK_MARKDOWN}"
 
 
 async def run_single_agent(prompt: str, agent_name: str, *, stage_name: str | None = None) -> dict:
@@ -110,7 +122,7 @@ async def run_single_agent(prompt: str, agent_name: str, *, stage_name: str | No
         tool_calls = []
         first_result = True
 
-        effective_prompt = _append_output_schema(prompt)
+        effective_prompt = _append_output_schema(prompt, stage_name=stage_name)
         async for message in query(prompt=effective_prompt, options=options):
             # AssistantMessage: AI 响应（文本或工具调用）
             if isinstance(message, AssistantMessage):
@@ -922,6 +934,7 @@ async def run_agents_parallel(
 - 请以 [Agent: {agent_name}] 为前缀发布你的回复
 - 专注于 Issue 的讨论话题和内容
 - 不要去分析项目代码或架构（除非 Issue 明确要求）
+- 仅输出 Markdown，禁止输出 YAML/JSON 代码块
 """
         if os.environ.get("PROMPT_LOG") == "1":
             max_len = 2000
