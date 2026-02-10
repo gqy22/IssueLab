@@ -127,6 +127,23 @@ jobs:
 
           echo "✅ LLM API health check passed (http_code=${HTTP_CODE})"
 
+      - name: Prepare MCP env for agent
+        if: steps.check.outputs.exists == 'true'
+        env:
+          ISSUELAB_MCP_ENV_JSON: ${{ secrets.ISSUELAB_MCP_ENV_JSON }}
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+          ZOTERO_API_KEY: ${{ secrets.ZOTERO_API_KEY }}
+          ZOTERO_LIBRARY_ID: ${{ secrets.ZOTERO_LIBRARY_ID }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+          SERPAPI_API_KEY: ${{ secrets.SERPAPI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          uv run python scripts/prepare_mcp_env.py \
+            --agent "${{ steps.agent.outputs.username }}" \
+            --include-root-mcp \
+            --write-github-env
+
       - name: Run agent
         if: steps.check.outputs.exists == 'true'
         id: run_agent

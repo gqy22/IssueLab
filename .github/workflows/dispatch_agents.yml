@@ -192,6 +192,10 @@ jobs:
           # 解析 JSON 数组并逐个执行
           while read -r agent; do
             echo "[LOCAL] Executing agent: $agent"
+            MCP_EXPORTS=$(uv run python scripts/prepare_mcp_env.py --agent "$agent" --include-root-mcp --shell)
+            if [ -n "$MCP_EXPORTS" ]; then
+              eval "$MCP_EXPORTS"
+            fi
             uv run python -m issuelab execute \
               --issue ${{ github.event.issue.number }} \
               --agents "$agent" \
@@ -223,6 +227,14 @@ jobs:
           MCP_LOG_DETAIL: "1"
           PROMPT_LOG: "1"
           ISSUELAB_TRIGGER_COMMENT: ${{ github.event.comment.body }}
+          ISSUELAB_MCP_ENV_JSON: ${{ secrets.ISSUELAB_MCP_ENV_JSON }}
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+          ZOTERO_API_KEY: ${{ secrets.ZOTERO_API_KEY }}
+          ZOTERO_LIBRARY_ID: ${{ secrets.ZOTERO_LIBRARY_ID }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+          SERPAPI_API_KEY: ${{ secrets.SERPAPI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
       - name: Emit observability summary
         if: always()
