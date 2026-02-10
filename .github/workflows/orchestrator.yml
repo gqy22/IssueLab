@@ -85,7 +85,6 @@ jobs:
       github.event.issue.state == 'open' &&
       github.event.comment.user.type != 'Bot' &&
       !contains(fromJson('["moderator","reviewer_a","reviewer_b","summarizer","observer","pubmed_observer","arxiv_observer","video_manim"]'), github.event.comment.user.login) &&
-      !contains(github.event.comment.body, '[Agent:') &&
       (contains(github.event.comment.body, '相关人员:') || contains(github.event.comment.body, '协作请求:'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -118,6 +117,7 @@ jobs:
           from issuelab.utils.mentions import extract_controlled_mentions
 
           comment = os.environ.get("COMMENT_BODY", "")
+          is_agent_comment = "[Agent:" in comment
           registry = load_registry(Path("agents"))
           system_agents: set[str] = set()
           user_agents: set[str] = set()
@@ -135,7 +135,9 @@ jobs:
           found_user: list[str] = []
           for mention in extract_controlled_mentions(comment):
             candidate = mention.lower()
-            if candidate in system_agents and candidate not in found_system:
+            # agent 评论不再触发 system agents，避免递归链路；
+            # 但允许触发 user agents（如 @gqy20）。
+            if (not is_agent_comment) and candidate in system_agents and candidate not in found_system:
               found_system.append(candidate)
             if candidate in user_agents and candidate not in found_user:
               found_user.append(candidate)
@@ -614,7 +616,13 @@ jobs:
           retention-days: 7
 
   observability-summary:
-    if: always()
+    if: |
+      always() &&
+      (
+        needs.auto-trigger-review.result != 'skipped' ||
+        needs.detect-mentions.result != 'skipped' ||
+        needs.process-command.result != 'skipped'
+      )
     needs:
       - auto-trigger-review
       - detect-mentions
