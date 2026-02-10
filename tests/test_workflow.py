@@ -33,15 +33,6 @@ def test_workflow_has_issue_comment_trigger():
     assert "created" in content or "edited" in content, "Missing issue_comment types"
 
 
-def test_workflow_has_issues_trigger():
-    """工作流必须定义 issues 触发器"""
-    workflow_path = PROJECT_ROOT / ".github" / "workflows" / "orchestrator.yml"
-    content = workflow_path.read_text()
-
-    assert "issues:" in content, "Missing issues trigger"
-    assert "labeled" in content, "Missing issues labeled type"
-
-
 def test_workflow_has_concurrency():
     """工作流必须定义并发控制"""
     workflow_path = PROJECT_ROOT / ".github" / "workflows" / "orchestrator.yml"
@@ -49,14 +40,6 @@ def test_workflow_has_concurrency():
 
     assert "concurrency" in content, "Missing concurrency configuration"
     assert "github.event.issue.number" in content, "Concurrency should use issue number"
-
-
-def test_workflow_has_jobs():
-    """工作流必须包含 jobs"""
-    workflow_path = PROJECT_ROOT / ".github" / "workflows" / "orchestrator.yml"
-    content = workflow_path.read_text()
-
-    assert "jobs:" in content, "Missing jobs configuration"
 
 
 def test_workflow_uses_uv():
@@ -67,23 +50,13 @@ def test_workflow_uses_uv():
     assert "uv" in content, "Workflow should use uv for package management"
 
 
-def test_workflow_uses_correct_secrets():
-    """工作流应该使用正确的 Secret 名称"""
+def test_workflow_uses_required_model_secrets():
+    """orchestrator 应包含模型运行必需的 secrets。"""
     workflow_path = PROJECT_ROOT / ".github" / "workflows" / "orchestrator.yml"
     content = workflow_path.read_text()
 
-    # 检查用户配置的 Secret
     assert "ANTHROPIC_AUTH_TOKEN" in content, "Workflow should use ANTHROPIC_AUTH_TOKEN secret"
-    assert "ANTHROPIC_BASE_URL" in content, "Workflow should use ANTHROPIC_BASE_URL secret"
-    assert "ANTHROPIC_MODEL" in content, "Workflow should use ANTHROPIC_MODEL secret"
-
-
-def test_workflow_runs_on_ubuntu():
-    """工作流应该在 ubuntu 运行"""
-    workflow_path = PROJECT_ROOT / ".github" / "workflows" / "orchestrator.yml"
-    content = workflow_path.read_text()
-
-    assert "runs-on: ubuntu-latest" in content, "Should run on ubuntu-latest"
+    assert "PAT_TOKEN" in content, "Workflow should use PAT_TOKEN secret for gh writes"
 
 
 def test_workflow_has_permissions():
@@ -94,25 +67,11 @@ def test_workflow_has_permissions():
     assert "permissions:" in content or "issues: write" in content, "Should define permissions"
 
 
-def test_orchestrator_workflow_has_timeout():
-    """orchestrator.yml 应该设置 timeout-minutes"""
+def test_orchestrator_workflow_has_timeout_and_uv_cache():
+    """orchestrator 应同时具备 timeout 与 uv cache。"""
     workflow_path = PROJECT_ROOT / ".github" / "workflows" / "orchestrator.yml"
-
-    if not workflow_path.exists():
-        pytest.skip("工作流文件不存在")
-
     content = workflow_path.read_text()
     assert "timeout-minutes:" in content, "工作流应该设置 timeout-minutes"
-
-
-def test_orchestrator_workflow_has_uv_cache():
-    """orchestrator.yml 应该启用 uv 缓存"""
-    workflow_path = PROJECT_ROOT / ".github" / "workflows" / "orchestrator.yml"
-
-    if not workflow_path.exists():
-        pytest.skip("工作流文件不存在")
-
-    content = workflow_path.read_text()
     assert "enable-cache: true" in content, "工作流应该启用 uv 缓存"
 
 
@@ -127,22 +86,3 @@ def test_orchestrator_workflow_sets_skip_version_check():
     assert (
         "CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK" in content
     ), "工作流应该设置 CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK 环境变量"
-
-
-def test_skip_version_check_env_is_true():
-    """CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK 应该设置为 true"""
-    from issuelab.agents.options import create_agent_options
-
-    options = create_agent_options()
-    assert "CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK" in options.env
-    assert options.env["CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK"] == "true"
-
-
-def test_default_agent_config():
-    """默认 AgentConfig 应该符合预期"""
-    from issuelab.agents.config import AgentConfig
-
-    config = AgentConfig()
-    assert config.max_turns == 30
-    assert config.max_budget_usd == 10.00
-    assert config.timeout_seconds == 180

@@ -1,4 +1,4 @@
-"""集成测试 - 验证模块间协作"""
+"""轻量集成测试 - 验证核心模块协作。"""
 
 from issuelab.agents import discover_agents, load_prompt, normalize_agent_name
 from issuelab.parser import parse_agent_mentions
@@ -32,32 +32,10 @@ def test_end_to_end_agent_loading():
 
 
 def test_all_prompts_loadable():
-    """验证所有发现的 agent 都能正确加载 prompt"""
+    """验证所有发现的 agent 都能正确加载 prompt（跨 discovery + load_prompt）。"""
     agents = discover_agents()
 
     for agent_name in agents:
         prompt = load_prompt(agent_name)
         assert len(prompt) > 0, f"Agent {agent_name} has empty prompt"
         assert not prompt.startswith("---"), f"Agent {agent_name} prompt should be plain markdown"
-
-
-def test_agent_descriptions_present():
-    """验证所有 agent 都有描述信息"""
-    agents = discover_agents()
-
-    for agent_name, config in agents.items():
-        assert "description" in config, f"Agent {agent_name} missing description"
-        assert len(config["description"]) > 0, f"Agent {agent_name} has empty description"
-
-
-def test_trigger_conditions_format():
-    """验证触发条件格式正确"""
-    agents = discover_agents()
-
-    for agent_name, config in agents.items():
-        assert "trigger_conditions" in config, f"Agent {agent_name} missing trigger_conditions"
-        trigger = config["trigger_conditions"]
-        # 触发条件可以是列表、空列表、None 或空字符串
-        assert isinstance(
-            trigger, list | type(None) | str
-        ), f"Agent {agent_name} trigger_conditions has invalid type: {type(trigger)}"

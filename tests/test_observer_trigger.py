@@ -11,47 +11,30 @@ TDD 测试用例：
 import subprocess
 from unittest.mock import Mock, patch
 
+import pytest
+
 
 class TestSystemAgentDetection:
     """测试系统agent检测"""
 
-    def test_moderator_is_system(self):
-        """Moderator应该被识别为系统agent"""
+    @pytest.mark.parametrize(
+        ("agent_name", "expected"),
+        [
+            ("moderator", True),
+            ("reviewer_a", True),
+            ("observer", True),
+            ("Moderator", True),
+            ("REVIEWER_A", True),
+            ("gqy22", False),
+            ("alice", False),
+            ("", False),
+        ],
+    )
+    def test_is_system_agent_cases(self, agent_name: str, expected: bool):
+        """系统agent识别应正确处理大小写、空值与用户agent"""
         from issuelab.observer_trigger import is_system_agent
 
-        assert is_system_agent("moderator") is True
-
-    def test_reviewer_a_is_system(self):
-        """Reviewer_a应该被识别为系统agent"""
-        from issuelab.observer_trigger import is_system_agent
-
-        assert is_system_agent("reviewer_a") is True
-
-    def test_observer_is_system(self):
-        """Observer应该被识别为系统agent"""
-        from issuelab.observer_trigger import is_system_agent
-
-        assert is_system_agent("observer") is True
-
-    def test_user_agent_is_not_system(self):
-        """用户agent不应该被识别为系统agent"""
-        from issuelab.observer_trigger import is_system_agent
-
-        assert is_system_agent("gqy22") is False
-        assert is_system_agent("alice") is False
-
-    def test_empty_string_is_not_system(self):
-        """空字符串不应该被识别为系统agent"""
-        from issuelab.observer_trigger import is_system_agent
-
-        assert is_system_agent("") is False
-
-    def test_case_insensitive(self):
-        """agent名称应该不区分大小写"""
-        from issuelab.observer_trigger import is_system_agent
-
-        assert is_system_agent("Moderator") is True
-        assert is_system_agent("REVIEWER_A") is True
+        assert is_system_agent(agent_name) is expected
 
 
 class TestSystemAgentTrigger:

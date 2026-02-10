@@ -14,35 +14,12 @@ def test_agents_directory_exists():
     assert AGENTS_DIR.exists(), f"agents directory not found: {AGENTS_DIR}"
 
 
-def test_moderator_prompt_exists():
-    """Moderator 提示词必须存在"""
-    moderator_prompt = _prompt_path("moderator")
-    assert moderator_prompt.exists(), f"moderator.md not found: {moderator_prompt}"
-
-
-def test_reviewer_a_prompt_exists():
-    """ReviewerA 提示词必须存在"""
-    reviewer_a_prompt = _prompt_path("reviewer_a")
-    assert reviewer_a_prompt.exists(), f"reviewer_a.md not found: {reviewer_a_prompt}"
-
-
-def test_reviewer_b_prompt_exists():
-    """ReviewerB 提示词必须存在"""
-    reviewer_b_prompt = _prompt_path("reviewer_b")
-    assert reviewer_b_prompt.exists(), f"reviewer_b.md not found: {reviewer_b_prompt}"
-
-
-def test_summarizer_prompt_exists():
-    """Summarizer 提示词必须存在"""
-    summarizer_prompt = _prompt_path("summarizer")
-    assert summarizer_prompt.exists(), f"summarizer.md not found: {summarizer_prompt}"
-
-
 def test_prompts_not_empty():
     """所有提示词文件必须非空"""
     prompt_agents = ["moderator", "reviewer_a", "reviewer_b", "summarizer"]
     for agent in prompt_agents:
         prompt_path = _prompt_path(agent)
+        assert prompt_path.exists(), f"{agent}/prompt.md not found: {prompt_path}"
         content = prompt_path.read_text()
         assert len(content) > 50, f"{agent}/prompt.md is too short or empty"
 
