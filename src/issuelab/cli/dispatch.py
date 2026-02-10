@@ -8,9 +8,7 @@ import argparse
 import json
 import os
 import sys
-import time
 from datetime import UTC, datetime, timedelta
-from functools import wraps
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +16,7 @@ import jwt
 import requests
 
 from issuelab.agents.registry import load_registry
+from issuelab.retry import retry_sync
 
 
 def match_triggers(mentions: list[str], registry: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
@@ -43,46 +42,8 @@ def match_triggers(mentions: list[str], registry: dict[str, dict[str, Any]]) -> 
     return matched
 
 
-def retry_on_failure(max_attempts: int = 3, delay: float = 2, backoff: float = 2):
-    """
-    重试装饰器，用于网络请求失败时自动重试
-
-    Args:
-        max_attempts: 最大重试次数
-        delay: 初始延迟（秒）
-        backoff: 延迟倍增系数
-    """
-
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            current_delay = delay
-            last_exception = None
-
-            for attempt in range(max_attempts):
-                try:
-                    return func(*args, **kwargs)
-                except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
-                    last_exception = e
-                    if attempt == max_attempts - 1:
-                        # 最后一次尝试也失败了
-                        raise
-
-                    print(
-                        f"[WARNING] Attempt {attempt + 1}/{max_attempts} failed: {e}",
-                        file=sys.stderr,
-                    )
-                    print(f"   Retrying in {current_delay:.1f}s...", file=sys.stderr)
-                    time.sleep(current_delay)
-                    current_delay *= backoff
-
-            # 如果所有尝试都失败了
-            if last_exception:
-                raise last_exception
-
-        return wrapper
-
-    return decorator
+def _should_retry_dispatch_exception(exc: Exception) -> bool:
+    return isinstance(exc, requests.exceptions.Timeout | requests.exceptions.ConnectionError)
 
 
 def generate_github_app_jwt(app_id: str, private_key: str) -> str:
@@ -195,7 +156,7 @@ def get_token_for_repository(repository: str, app_id: str, private_key: str) -> 
     return generate_installation_token(installation_id, app_jwt)
 
 
-@retry_on_failure(max_attempts=3, delay=2)
+@retry_sync(max_retries=2, initial_delay=2.0, backoff_factor=2.0, should_retry=_should_retry_dispatch_exception)
 def dispatch_event(
     repository: str, event_type: str, client_payload: dict[str, Any], token: str, timeout: int = 10
 ) -> tuple[bool, str]:
@@ -259,7 +220,7 @@ def dispatch_event(
         return False, "UNKNOWN_ERROR"
 
 
-@retry_on_failure(max_attempts=3, delay=2)
+@retry_sync(max_retries=2, initial_delay=2.0, backoff_factor=2.0, should_retry=_should_retry_dispatch_exception)
 def dispatch_workflow(
     repository: str, workflow_file: str, ref: str, inputs: dict[str, Any], token: str, timeout: int = 10
 ) -> tuple[bool, str]:
@@ -360,6 +321,152 @@ def write_github_output(dispatched: int, total: int, local_agents: list[str] | N
         print(f"Warning: Failed to write GitHub output: {e}", file=sys.stderr)
 
 
+def dispatch_mentions(
+    *,
+    mentions: list[str],
+    agents_dir: str | Path,
+    source_repo: str,
+    issue_number: int,
+    issue_title: str | None = None,
+    issue_body: str | None = None,
+    comment_id: int | None = None,
+    comment_body: str | None = None,
+    labels: list[str] | None = None,
+    available_agents: list[dict[str, Any]] | None = None,
+    event_type: str = "issue_mention",
+    dry_run: bool = False,
+    app_id: str | None = None,
+    app_private_key: str | None = None,
+) -> dict[str, Any]:
+    """Core dispatch logic reusable by CLI and internal callers."""
+    if not mentions:
+        return {"success_count": 0, "total_count": 0, "local_agents": [], "failed_agents": []}
+
+    # GitHub App 认证模式（仅保留此方式）
+    app_id = app_id or os.environ.get("GITHUB_APP_ID")
+    app_private_key = app_private_key or os.environ.get("GITHUB_APP_PRIVATE_KEY")
+    if not app_id or not app_private_key:
+        raise ValueError("GitHub App authentication requires GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY")
+
+    print("🔑 Using GitHub App authentication")
+    github_app_credentials = (app_id, app_private_key)
+
+    print(f"Found mentions: {', '.join(mentions)}")
+
+    agents_dir_path = Path(agents_dir)
+    registry = load_registry(agents_dir_path)
+    print(f"Loaded {len(registry)} registered agents")
+
+    if not registry:
+        print("Warning: No agents registered")
+        return {"success_count": 0, "total_count": 0, "local_agents": [], "failed_agents": []}
+
+    matched_configs = match_triggers(mentions, registry)
+    if not matched_configs:
+        print("Info: No matching agents found")
+        return {"success_count": 0, "total_count": 0, "local_agents": [], "failed_agents": []}
+
+    matched_all_count = len(matched_configs)
+    matched_configs = [cfg for cfg in matched_configs if str(cfg.get("agent_type", "")).lower() != "system"]
+    skipped_system_count = matched_all_count - len(matched_configs)
+    if skipped_system_count > 0:
+        print(f"Info: Skipped {skipped_system_count} system agent(s); handled by orchestrator workflow")
+    if not matched_configs:
+        return {"success_count": 0, "total_count": 0, "local_agents": [], "failed_agents": []}
+
+    print(f"Matched {len(matched_configs)} user agents")
+
+    client_payload: dict[str, Any] = {
+        "source_repo": source_repo,
+        "issue_number": issue_number,
+        "issue_title": issue_title,
+        "issue_body": issue_body,
+    }
+    if comment_id:
+        client_payload["comment_id"] = comment_id
+        client_payload["comment_body"] = comment_body
+    if labels is not None:
+        client_payload["labels"] = labels
+    if available_agents is not None:
+        client_payload["available_agents"] = json.dumps(available_agents, ensure_ascii=False)
+        print(f"Including {len(available_agents)} available agents in payload")
+
+    success_count = 0
+    failed_agents: list[dict[str, str]] = []
+    local_agents: list[str] = []
+
+    for config in matched_configs:
+        repository = config.get("repository")
+        branch = config.get("branch", "main")
+        username = config.get("owner") or config.get("username") or ""
+        dispatch_mode = config.get("dispatch_mode", "repository_dispatch")
+        workflow_file = config.get("workflow_file", "user_agent.yml")
+
+        if not repository:
+            print(f"[WARNING] {username} has no repository configured", file=sys.stderr)
+            failed_agents.append({"username": username, "reason": "No repository configured"})
+            continue
+
+        if repository == source_repo:
+            print(f"[LOCAL] {username} will run locally (same repository)", file=sys.stderr)
+            if username:
+                local_agents.append(username)
+            success_count += 1
+            continue
+
+        payload = client_payload.copy()
+        payload["target_username"] = username
+        payload["target_branch"] = branch
+
+        if dry_run:
+            print(f"[DRY RUN] Would dispatch to {repository}")
+            print(f"  Mode: {dispatch_mode}")
+            print(f"  Branch: {branch}")
+            if dispatch_mode == "workflow_dispatch":
+                print(f"  Workflow file: {workflow_file}")
+            print(f"  Payload keys: {', '.join(payload.keys())}")
+            success_count += 1
+            continue
+
+        app_id_value, private_key = github_app_credentials
+        token = get_token_for_repository(repository, app_id_value, private_key)
+        if not token:
+            print(f"[WARNING] Failed to get token for {repository}", file=sys.stderr)
+            failed_agents.append({"username": username, "repository": repository, "error": "TOKEN_GENERATION_FAILED"})
+            continue
+
+        if dispatch_mode == "workflow_dispatch":
+            success, error_code = dispatch_workflow(repository, workflow_file, branch, payload, token)
+        else:
+            success, error_code = dispatch_event(repository, event_type, payload, token)
+
+        if success:
+            success_count += 1
+        else:
+            failed_agents.append({"username": username, "repository": repository, "error": error_code})
+
+    print(f"\n{'=' * 60}")
+    print(f"[OK] Successfully dispatched to {success_count}/{len(matched_configs)} agents")
+    if failed_agents:
+        print(f"[ERROR] Failed agents ({len(failed_agents)}):")
+        for agent in failed_agents:
+            username = agent["username"]
+            error = agent.get("error", agent.get("reason", "Unknown"))
+            print(f"   - {username}: {error}")
+    print(f"{'=' * 60}")
+
+    if local_agents:
+        print(f"[LOCAL] Agents to run locally: {', '.join(local_agents)}")
+
+    write_github_output(success_count, len(matched_configs), local_agents)
+    return {
+        "success_count": success_count,
+        "total_count": len(matched_configs),
+        "local_agents": local_agents,
+        "failed_agents": failed_agents,
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     """
     CLI 入口点
@@ -425,9 +532,6 @@ def main(argv: list[str] | None = None) -> int:
         print("Error: GitHub App authentication requires GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY", file=sys.stderr)
         return 1
 
-    print("🔑 Using GitHub App authentication")
-    github_app_credentials = (app_id, app_private_key)
-
     # 解析 mentions（支持 JSON 和 CSV 格式）
     mentions_str = args.mentions.strip()
     if mentions_str.startswith("[") and mentions_str.endswith("]"):
@@ -446,142 +550,46 @@ def main(argv: list[str] | None = None) -> int:
         print("Info: No mentions found, nothing to dispatch")
         return 0
 
-    print(f"Found mentions: {', '.join(mentions)}")
-
-    # 加载注册信息
-    agents_dir = Path(args.agents_dir)
-    registry = load_registry(agents_dir)
-    print(f"Loaded {len(registry)} registered agents")
-
-    if not registry:
-        print("Warning: No agents registered")
-        return 0
-
-    # 匹配用户
-    matched_configs = match_triggers(mentions, registry)
-
-    if not matched_configs:
-        print("Info: No matching agents found")
-        return 0
-
-    print(f"Matched {len(matched_configs)} agents")
-
-    # 构建 client_payload
-    client_payload = {
-        "source_repo": args.source_repo,
-        "issue_number": args.issue_number,
-        "issue_title": args.issue_title,
-        "issue_body": issue_body,
-    }
-
-    if args.comment_id:
-        client_payload["comment_id"] = args.comment_id
-        client_payload["comment_body"] = comment_body
-
+    labels_list = None
     if args.labels:
         try:
-            client_payload["labels"] = json.loads(args.labels)
+            labels_list = json.loads(args.labels)
         except json.JSONDecodeError:
             print(f"Warning: Invalid JSON in labels: {args.labels}", file=sys.stderr)
 
-    # 添加可用智能体列表
+    agents_list = None
     if args.available_agents:
         try:
             agents_list = (
                 json.loads(args.available_agents) if isinstance(args.available_agents, str) else args.available_agents
             )
-            client_payload["available_agents"] = json.dumps(agents_list, ensure_ascii=False)
-            print(f"Including {len(agents_list)} available agents in payload")
         except json.JSONDecodeError:
             print(f"Warning: Invalid JSON in available_agents: {args.available_agents}", file=sys.stderr)
 
-    # 分发事件
-    success_count = 0
-    failed_agents: list[dict[str, str]] = []
-    local_agents: list[str] = []  # 需要本地执行的 Agent
+    try:
+        summary = dispatch_mentions(
+            mentions=mentions,
+            agents_dir=args.agents_dir,
+            source_repo=args.source_repo,
+            issue_number=args.issue_number,
+            issue_title=args.issue_title,
+            issue_body=issue_body,
+            comment_id=args.comment_id,
+            comment_body=comment_body,
+            labels=labels_list,
+            available_agents=agents_list,
+            event_type=args.event_type,
+            dry_run=args.dry_run,
+            app_id=app_id,
+            app_private_key=app_private_key,
+        )
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
 
-    for config in matched_configs:
-        repository = config.get("repository")
-        branch = config.get("branch", "main")
-        username = config.get("owner") or config.get("username") or ""
-        dispatch_mode = config.get("dispatch_mode", "repository_dispatch")
-        workflow_file = config.get("workflow_file", "user_agent.yml")
-
-        if not repository:
-            print(f"[WARNING] {username} has no repository configured", file=sys.stderr)
-            failed_agents.append({"username": username, "reason": "No repository configured"})
-            continue
-
-        # 检测主仓库 Agent → 标记为本地执行（不走 API dispatch）
-        if repository == args.source_repo:
-            print(f"[LOCAL] {username} will run locally (same repository)", file=sys.stderr)
-            if username:
-                local_agents.append(username)
-            success_count += 1
-            continue
-
-        # 添加用户特定信息
-        payload = client_payload.copy()
-        payload["target_username"] = username
-        payload["target_branch"] = branch
-
-        # Dry-run 模式
-        if args.dry_run:
-            print(f"[DRY RUN] Would dispatch to {repository}")
-            print(f"  Mode: {dispatch_mode}")
-            print(f"  Branch: {branch}")
-            if dispatch_mode == "workflow_dispatch":
-                print(f"  Workflow file: {workflow_file}")
-            print(f"  Payload keys: {', '.join(payload.keys())}")
-            success_count += 1
-            continue
-
-        # 根据模式选择 dispatch 方式
-        success = False
-        error_code = ""
-
-        # 获取目标仓库的 token
-        # GitHub App 模式：为每个目标仓库动态生成 token
-        app_id, private_key = github_app_credentials
-        token = get_token_for_repository(repository, app_id, private_key)
-        if not token:
-            print(f"[WARNING] Failed to get token for {repository}", file=sys.stderr)
-            failed_agents.append({"username": username, "repository": repository, "error": "TOKEN_GENERATION_FAILED"})
-            continue
-
-        if dispatch_mode == "workflow_dispatch":
-            # 使用 workflow_dispatch（推荐用于 fork 仓库）
-            success, error_code = dispatch_workflow(repository, workflow_file, branch, payload, token)
-        else:
-            # 使用 repository_dispatch（默认，用于非 fork 仓库）
-            success, error_code = dispatch_event(repository, args.event_type, payload, token)
-
-        if success:
-            success_count += 1
-        else:
-            failed_agents.append({"username": username, "repository": repository, "error": error_code})
-
-    # 输出详细结果
-    print(f"\n{'=' * 60}")
-    print(f"[OK] Successfully dispatched to {success_count}/{len(matched_configs)} agents")
-
-    if failed_agents:
-        print(f"[ERROR] Failed agents ({len(failed_agents)}):")
-        for agent in failed_agents:
-            username = agent["username"]
-            error = agent.get("error", agent.get("reason", "Unknown"))
-            print(f"   - {username}: {error}")
-
-    print(f"{'=' * 60}")
-
-    # 输出本地 Agent 列表
-    if local_agents:
-        print(f"[LOCAL] Agents to run locally: {', '.join(local_agents)}")
-
-    # 写入 GitHub Actions 输出
-    write_github_output(success_count, len(matched_configs), local_agents)
-
-    return 0 if success_count > 0 else 1
+    if summary["total_count"] == 0:
+        return 0
+    return 0 if summary["success_count"] > 0 else 1
 
 
 if __name__ == "__main__":

@@ -1,8 +1,9 @@
 """Agent @mention 解析器：从评论中提取并映射 Agent 名称"""
 
-import re
+from pathlib import Path
 
-from issuelab.agents.registry import AGENT_NAMES
+from issuelab.agents.registry import load_registry
+from issuelab.utils.mentions import GITHUB_MENTION_PATTERN, extract_github_mentions
 
 
 def parse_agent_mentions(comment_body: str) -> list[str]:
@@ -16,15 +17,20 @@ def parse_agent_mentions(comment_body: str) -> list[str]:
     Returns:
         标准化的 Agent 名称列表
     """
-    pattern = r"@([a-zA-Z_]+)"
-    raw_mentions = re.findall(pattern, comment_body, re.IGNORECASE)
+    raw_mentions = extract_github_mentions(comment_body)
 
-    # 映射到标准名称
+    registry = load_registry(Path("agents"), include_disabled=False)
+    registry_lc = {str(name).lower(): cfg for name, cfg in registry.items()}
+
+    # 映射到标准名称（仅允许已注册 agent）
     agents = []
     for m in raw_mentions:
         normalized = m.lower()
-        if normalized in AGENT_NAMES:
-            agents.append(AGENT_NAMES[normalized])
+        config = registry_lc.get(normalized)
+        if config is None:
+            continue
+        canonical = config.get("owner") or config.get("username") or normalized
+        agents.append(str(canonical).lower())
 
     # 去重，保持顺序
     seen = set()
@@ -46,4 +52,4 @@ def has_agent_mentions(comment_body: str) -> bool:
     Returns:
         是否包含 @mention
     """
-    return bool(re.search(r"@[a-zA-Z_]+", comment_body))
+    return bool(GITHUB_MENTION_PATTERN.search(comment_body))

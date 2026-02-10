@@ -10,8 +10,9 @@ import logging
 import os
 import re
 import subprocess
+import warnings
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 
@@ -20,6 +21,8 @@ from issuelab.mention_policy import (
     clean_mentions_in_text,
     filter_mentions,
 )
+from issuelab.utils.mentions import extract_controlled_mentions
+from issuelab.utils.yaml_text import extract_yaml_block
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +36,7 @@ __all__ = [
     "extract_mentions_from_yaml",
     "should_auto_close",
     "close_issue",
+    "get_mentions_max_count",
 ]
 
 
@@ -42,6 +46,7 @@ _DEFAULT_FORMAT_RULES = {
         "summary": "## Summary",
         "findings": "## Key Findings",
         "actions": "## Recommended Actions",
+        "sources": "## Sources",
         "structured": "## Structured (YAML)",
     },
     "limits": {
@@ -53,12 +58,34 @@ _DEFAULT_FORMAT_RULES = {
         "mentions_max_count": 5,
     },
     "rules": {
-        "mentions_only_in_actions": True,
-        "yaml_required": True,
+        # Reserved for future rule flags.
     },
 }
 
 _FORMAT_RULES_CACHE: dict[str, Any] | None = None
+
+
+def _find_marker(response_text: str, candidates: list[str], canonical: str) -> tuple[int, str]:
+    """Return the earliest matched marker and its text."""
+    best_pos = -1
+    best_marker = canonical
+    for marker in candidates:
+        pos = response_text.find(marker)
+        if pos == -1:
+            continue
+        if best_pos == -1 or pos < best_pos:
+            best_pos = pos
+            best_marker = marker
+    return best_pos, best_marker
+
+
+def _remove_last_yaml_fence(text: str) -> str:
+    """Remove the last ```yaml fenced block from text."""
+    matches = list(re.finditer(r"```yaml[\s\S]*?```", text, re.IGNORECASE))
+    if not matches:
+        return text
+    start, end = matches[-1].span()
+    return text[:start] + text[end:]
 
 
 def _load_format_rules() -> dict[str, Any]:
@@ -66,19 +93,22 @@ def _load_format_rules() -> dict[str, Any]:
     if _FORMAT_RULES_CACHE is not None:
         return _FORMAT_RULES_CACHE
 
-    rules = {**_DEFAULT_FORMAT_RULES}
+    rules = cast(dict[str, Any], {**_DEFAULT_FORMAT_RULES})
     config_path = Path(__file__).resolve().parents[2] / "config" / "response_format.yml"
     if config_path.exists():
         try:
             with config_path.open("r", encoding="utf-8") as handle:
                 data = yaml.safe_load(handle) or {}
             rules.update({k: v for k, v in data.items() if k in rules})
-            if "sections" in data:
-                rules["sections"].update(data.get("sections", {}))
-            if "limits" in data:
-                rules["limits"].update(data.get("limits", {}))
-            if "rules" in data:
-                rules["rules"].update(data.get("rules", {}))
+            sections = data.get("sections", {})
+            if isinstance(sections, dict):
+                cast(dict[str, Any], rules.get("sections", {})).update(sections)
+            limits = data.get("limits", {})
+            if isinstance(limits, dict):
+                cast(dict[str, Any], rules.get("limits", {})).update(limits)
+            rule_items = data.get("rules", {})
+            if isinstance(rule_items, dict):
+                cast(dict[str, Any], rules.get("rules", {})).update(rule_items)
         except Exception as exc:
             logger.warning("Failed to load response format rules: %s", exc)
 
@@ -95,13 +125,55 @@ def _truncate_text(text: str, limit: int) -> str:
     return text[:limit]
 
 
-def _extract_yaml_block(text: str) -> str:
-    match = re.search(r"```yaml(.*?)```", text, re.DOTALL | re.IGNORECASE)
-    return match.group(1).strip() if match else ""
+def get_mentions_max_count(default: int = 5) -> int:
+    """Get mention cap from response format rules."""
+    rules = _load_format_rules()
+    limits = rules.get("limits", {})
+    try:
+        value = int(limits.get("mentions_max_count", default))
+        return value if value > 0 else default
+    except Exception:
+        return default
+
+
+def _extract_sources_from_parsed_yaml(parsed: Any) -> list[str]:
+    if not isinstance(parsed, dict):
+        return []
+    raw_sources = parsed.get("sources", [])
+    urls: list[str] = []
+    if isinstance(raw_sources, list):
+        for item in raw_sources:
+            if isinstance(item, str):
+                urls.append(item.strip())
+            elif isinstance(item, dict):
+                url = str(item.get("url", "")).strip()
+                if url:
+                    urls.append(url)
+    elif isinstance(raw_sources, str):
+        urls.append(raw_sources.strip())
+
+    normalized: list[str] = []
+    for url in urls:
+        if not url:
+            continue
+        if not re.match(r"^https?://", url, re.IGNORECASE):
+            continue
+        if url not in normalized:
+            normalized.append(url)
+    return normalized
 
 
 def extract_mentions_from_yaml(response_text: str) -> list[str]:
-    yaml_text = _extract_yaml_block(response_text)
+    """Deprecated compatibility helper.
+
+    Main trigger pipeline now parses mentions from controlled markdown sections.
+    """
+    warnings.warn(
+        "extract_mentions_from_yaml is deprecated; use extract_controlled_mentions instead",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    yaml_text = extract_yaml_block(response_text)
     if not yaml_text:
         return []
     try:
@@ -143,11 +215,14 @@ def _normalize_agent_output(response_text: str, agent_name: str | None) -> tuple
     summary_marker = sections["summary"]
     findings_marker = sections["findings"]
     actions_marker = sections["actions"]
+    sources_marker = sections.get("sources", "## Sources")
     yaml_marker = sections["structured"]
+    actions_aliases = [actions_marker, "## Recommendations"]
+    yaml_aliases = [yaml_marker, "## Confidence"]
 
     # Render YAML-only responses into markdown for user-facing agents.
     if summary_marker not in response_text:
-        yaml_text = _extract_yaml_block(response_text)
+        yaml_text = extract_yaml_block(response_text)
         if yaml_text and agent_name not in {"arxiv_observer", "pubmed_observer"}:
             try:
                 parsed = yaml.safe_load(yaml_text) or {}
@@ -157,6 +232,7 @@ def _normalize_agent_output(response_text: str, agent_name: str | None) -> tuple
                 summary_line = str(parsed.get("summary", "")).strip()
                 findings_list = parsed.get("findings", []) if isinstance(parsed.get("findings"), list) else []
                 recs_list = parsed.get("recommendations", []) if isinstance(parsed.get("recommendations"), list) else []
+                sources_list = _extract_sources_from_parsed_yaml(parsed)
 
                 findings_count = int(limits.get("findings_count", 3))
                 actions_max = int(limits.get("actions_max_count", 2))
@@ -184,6 +260,9 @@ def _normalize_agent_output(response_text: str, agent_name: str | None) -> tuple
                     actions_marker,
                     *(f"- [ ] {item}" for item in actions),
                     "",
+                    sources_marker,
+                    *(f"- {item}" for item in sources_list),
+                    "",
                     yaml_marker,
                     "```yaml",
                     yaml_text.strip(),
@@ -195,8 +274,23 @@ def _normalize_agent_output(response_text: str, agent_name: str | None) -> tuple
     if not force_normalize and summary_marker not in response_text:
         return response_text, warnings
 
-    markers = [summary_marker, findings_marker, actions_marker, yaml_marker]
-    positions = {marker: response_text.find(marker) for marker in markers}
+    summary_pos, summary_used = _find_marker(response_text, [summary_marker], summary_marker)
+    findings_pos, findings_used = _find_marker(response_text, [findings_marker], findings_marker)
+    actions_pos, actions_used = _find_marker(response_text, actions_aliases, actions_marker)
+    yaml_pos, yaml_used = _find_marker(response_text, yaml_aliases, yaml_marker)
+
+    positions = {
+        summary_marker: summary_pos,
+        findings_marker: findings_pos,
+        actions_marker: actions_pos,
+        yaml_marker: yaml_pos,
+    }
+    used_markers = {
+        summary_marker: summary_used,
+        findings_marker: findings_used,
+        actions_marker: actions_used,
+        yaml_marker: yaml_used,
+    }
     missing = [marker for marker, pos in positions.items() if pos == -1]
     if missing:
         warnings.append(f"Missing sections: {', '.join(missing)}")
@@ -204,19 +298,21 @@ def _normalize_agent_output(response_text: str, agent_name: str | None) -> tuple
             return response_text, warnings
 
     summary_block = response_text[
-        positions.get(summary_marker, 0) + len(summary_marker) : positions.get(findings_marker, len(response_text))
+        positions.get(summary_marker, 0) + len(used_markers.get(summary_marker, summary_marker)) : positions.get(
+            findings_marker, len(response_text)
+        )
     ].strip()
     findings_block = response_text[
-        positions.get(findings_marker, len(response_text)) + len(findings_marker) : positions.get(
-            actions_marker, len(response_text)
-        )
+        positions.get(findings_marker, len(response_text))
+        + len(used_markers.get(findings_marker, findings_marker)) : positions.get(actions_marker, len(response_text))
     ].strip()
     actions_block = response_text[
-        positions.get(actions_marker, len(response_text)) + len(actions_marker) : positions.get(
-            yaml_marker, len(response_text)
-        )
+        positions.get(actions_marker, len(response_text))
+        + len(used_markers.get(actions_marker, actions_marker)) : positions.get(yaml_marker, len(response_text))
     ].strip()
-    yaml_block = response_text[positions.get(yaml_marker, len(response_text)) + len(yaml_marker) :].strip()
+    yaml_block = response_text[
+        positions.get(yaml_marker, len(response_text)) + len(used_markers.get(yaml_marker, yaml_marker)) :
+    ].strip()
 
     summary_line = ""
     for line in summary_block.splitlines():
@@ -228,36 +324,39 @@ def _normalize_agent_output(response_text: str, agent_name: str | None) -> tuple
     summary_line = clean_mentions_in_text(summary_line)
     summary_line = _truncate_text(summary_line, int(limits.get("summary_max_chars", 20)))
 
-    findings: list[str] = []
+    findings_items: list[str] = []
     for line in findings_block.splitlines():
         match = re.match(r"^\s*[-*]\s+(.*)", line)
         if match:
-            findings.append(match.group(1).strip())
-    if not findings:
+            findings_items.append(match.group(1).strip())
+    if not findings_items:
         warnings.append("Key Findings missing bullets")
     findings_count = int(limits.get("findings_count", 3))
-    findings = [
+    findings_items = [
         _truncate_text(clean_mentions_in_text(item), int(limits.get("findings_max_chars", 25)))
-        for item in findings[:findings_count]
+        for item in findings_items[:findings_count]
     ]
-    if len(findings) < findings_count:
+    if len(findings_items) < findings_count:
         warnings.append(f"Key Findings fewer than {findings_count} bullets")
 
-    actions: list[str] = []
+    actions_items: list[str] = []
     for line in actions_block.splitlines():
         match = re.match(r"^\s*[-*]\s+(.*)", line)
         if match:
-            actions.append(match.group(1).strip())
-    if not actions:
+            actions_items.append(match.group(1).strip())
+    if not actions_items:
         warnings.append("Recommended Actions missing bullets")
     actions_max = int(limits.get("actions_max_count", 2))
-    actions = [_truncate_text(item, int(limits.get("actions_max_chars", 30))) for item in actions[:actions_max]]
-    if len(actions) > actions_max:
+    actions_items = [
+        _truncate_text(item, int(limits.get("actions_max_chars", 30))) for item in actions_items[:actions_max]
+    ]
+    if len(actions_items) > actions_max:
         warnings.append(f"Recommended Actions truncated to {actions_max} bullets")
 
     confidence = "medium"
     parsed_mentions: list[str] = []
-    yaml_text = _extract_yaml_block(yaml_block)
+    parsed_sources: list[str] = []
+    yaml_text = extract_yaml_block(yaml_block)
     parsed = None
     if yaml_text:
         try:
@@ -268,7 +367,8 @@ def _normalize_agent_output(response_text: str, agent_name: str | None) -> tuple
             parsed_confidence = str(parsed.get("confidence", "")).lower()
             if parsed_confidence in {"high", "medium", "low"}:
                 confidence = parsed_confidence
-            parsed_mentions = extract_mentions_from_yaml(response_text)
+            parsed_mentions = extract_controlled_mentions(response_text)
+            parsed_sources = _extract_sources_from_parsed_yaml(parsed)
 
     def _yaml_escape(value: str) -> str:
         return value.replace('"', '\\"')
@@ -278,39 +378,42 @@ def _normalize_agent_output(response_text: str, agent_name: str | None) -> tuple
         f'summary: "{_yaml_escape(summary_line)}"',
         "findings:",
     ]
-    for item in findings:
+    for item in findings_items:
         yaml_lines.append(f'  - "{_yaml_escape(item)}"')
     yaml_lines.append("recommendations:")
-    for item in actions:
+    for item in actions_items:
         yaml_lines.append(f'  - "{_yaml_escape(item)}"')
     if parsed_mentions:
-        mentions_max = int(limits.get("mentions_max_count", 5))
+        mentions_max = get_mentions_max_count(default=5)
         yaml_lines.append("mentions:")
         for item in parsed_mentions[:mentions_max]:
             yaml_lines.append(f'  - "{_yaml_escape(item)}"')
     yaml_lines.append(f'confidence: "{confidence}"')
     yaml_lines.append("```")
 
-    normalized: list[str] = []
+    normalized_lines: list[str] = []
     if agent_name:
-        normalized.extend([f"[Agent: {agent_name}]", ""])
-    normalized.extend(
+        normalized_lines.extend([f"[Agent: {agent_name}]", ""])
+    normalized_lines.extend(
         [
             summary_marker,
             summary_line or "(missing)",
             "",
             findings_marker,
-            *(f"- {item}" for item in findings),
+            *(f"- {item}" for item in findings_items),
             "",
             actions_marker,
-            *(f"- [ ] {item}" for item in actions),
+            *(f"- [ ] {item}" for item in actions_items),
+            "",
+            sources_marker,
+            *(f"- {item}" for item in parsed_sources),
             "",
             yaml_marker,
             *yaml_lines,
         ]
     )
 
-    return "\n".join(normalized).rstrip() + "\n", warnings
+    return "\n".join(normalized_lines).rstrip() + "\n", warnings
 
 
 def _extract_agent_name(response_text: str) -> str:
@@ -337,6 +440,8 @@ def normalize_comment_body(body: str, agent_name: str | None = None) -> str:
     if yaml_marker in normalized:
         head, _sep, _tail = normalized.partition(yaml_marker)
         normalized = head.rstrip() + "\n"
+    else:
+        normalized = _remove_last_yaml_fence(normalized)
     normalized = re.sub(r"\n{3,}", "\n\n", normalized).strip() + "\n"
     return normalized
 
@@ -361,7 +466,7 @@ def trigger_mentioned_agents(
     Returns:
         (results, allowed_mentions, filtered_mentions)
     """
-    mentions = extract_mentions_from_yaml(response)
+    mentions = extract_controlled_mentions(response)
 
     if not mentions:
         logger.info("[INFO] Response中没有@mentions")
@@ -370,7 +475,7 @@ def trigger_mentioned_agents(
     logger.info(f"[INFO] 发现 {len(mentions)} 个@mentions: {mentions}")
 
     # 应用策略过滤
-    allowed_mentions, filtered_mentions = filter_mentions(mentions, policy)
+    allowed_mentions, filtered_mentions = filter_mentions(mentions, policy, issue_number=issue_number)
 
     if filtered_mentions:
         logger.info(f"[FILTER] 过滤了 {len(filtered_mentions)} 个@mentions: {filtered_mentions}")
@@ -443,12 +548,23 @@ def process_agent_response(
     raw_response_text = response_text
 
     normalized_response, format_warnings = _normalize_agent_output(response_text, agent_name)
+    if agent_name == "gqy20":
+        yaml_text = extract_yaml_block(response_text)
+        parsed = None
+        if yaml_text:
+            try:
+                parsed = yaml.safe_load(yaml_text)
+            except Exception:
+                parsed = None
+        sources = _extract_sources_from_parsed_yaml(parsed)
+        if not sources:
+            format_warnings.append("Missing required sources URLs for gqy20")
     if format_warnings:
         logger.warning("Response format warnings for '%s': %s", agent_name, "; ".join(format_warnings))
     response_text = normalized_response
 
     # 提取所有 @mentions（基于原始回复，避免规范化后丢失）
-    mentions = extract_mentions_from_yaml(raw_response_text)
+    mentions = extract_controlled_mentions(raw_response_text)
 
     # 清理主体内容（将所有 @username 替换为 "用户 username"）
     clean_response = clean_mentions_in_text(response_text)

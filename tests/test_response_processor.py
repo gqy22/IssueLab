@@ -2,14 +2,17 @@
 
 from unittest.mock import patch
 
+import pytest
+
 
 class TestExtractMentionsFromYaml:
-    """测试从 YAML 提取 mentions"""
+    """测试 YAML mentions 兼容层（已废弃）"""
 
-    def test_extract_mentions_list(self):
-        from issuelab.response_processor import extract_mentions_from_yaml
-
-        text = """```yaml
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            (
+                """```yaml
 summary: "Test"
 findings:
   - "A"
@@ -19,42 +22,33 @@ mentions:
   - alice
   - bob
 confidence: "high"
-```"""
-        assert extract_mentions_from_yaml(text) == ["alice", "bob"]
-
-    def test_extract_mentions_with_at_prefix(self):
+```""",
+                ["alice", "bob"],
+            ),
+            ("No mentions here", []),
+        ],
+    )
+    def test_extract_mentions_compat_cases(self, text: str, expected: list[str]):
         from issuelab.response_processor import extract_mentions_from_yaml
 
-        text = """```yaml
-summary: "Test"
-findings: []
-recommendations: []
-mentions:
-  - "@charlie"
-  - "@delta"
-confidence: "medium"
-```"""
-        assert extract_mentions_from_yaml(text) == ["charlie", "delta"]
+        with pytest.warns(DeprecationWarning):
+            assert extract_mentions_from_yaml(text) == expected
 
-    def test_extract_mentions_invalid_items_filtered(self):
-        from issuelab.response_processor import extract_mentions_from_yaml
 
-        text = """```yaml
-summary: "Test"
-findings: []
-recommendations: []
-mentions:
-  - "not valid!"
-  - ""
-  - "ok_user"
-confidence: "low"
-```"""
-        assert extract_mentions_from_yaml(text) == ["ok_user"]
+class TestResponseFormatConfig:
+    def test_get_mentions_max_count_from_rules(self, monkeypatch):
+        from issuelab import response_processor as rp
 
-    def test_no_yaml_mentions(self):
-        from issuelab.response_processor import extract_mentions_from_yaml
+        monkeypatch.setattr(rp, "_FORMAT_RULES_CACHE", None)
+        monkeypatch.setattr(rp, "_load_format_rules", lambda: {"limits": {"mentions_max_count": 7}})
+        assert rp.get_mentions_max_count(default=5) == 7
 
-        assert extract_mentions_from_yaml("No mentions here") == []
+    def test_get_mentions_max_count_invalid_falls_back(self, monkeypatch):
+        from issuelab import response_processor as rp
+
+        monkeypatch.setattr(rp, "_FORMAT_RULES_CACHE", None)
+        monkeypatch.setattr(rp, "_load_format_rules", lambda: {"limits": {"mentions_max_count": "oops"}})
+        assert rp.get_mentions_max_count(default=5) == 5
 
 
 class TestTriggerMentionedAgents:
@@ -67,14 +61,14 @@ class TestTriggerMentionedAgents:
 
         mock_trigger.return_value = True
 
-        response = """```yaml
-summary: "Test"
-findings: []
-recommendations: []
-mentions:
-  - moderator
-confidence: "high"
-```"""
+        response = """[Agent: moderator]
+
+## Summary
+Test
+
+---
+相关人员: @moderator
+"""
         results, allowed, filtered = trigger_mentioned_agents(response, 1, "Title", "Body")
 
         assert results == {"moderator": True}
@@ -91,15 +85,14 @@ confidence: "high"
 
         mock_trigger.return_value = True
 
-        response = """```yaml
-summary: "Test"
-findings: []
-recommendations: []
-mentions:
-  - reviewer_a
-  - reviewer_b
-confidence: "high"
-```"""
+        response = """[Agent: moderator]
+
+## Summary
+Test
+
+---
+相关人员: @reviewer_a @reviewer_b
+"""
         results, allowed, filtered = trigger_mentioned_agents(response, 2, "Title", "Body")
 
         assert results == {"reviewer_a": True, "reviewer_b": True}
@@ -112,15 +105,14 @@ confidence: "high"
         """跳过系统账号"""
         from issuelab.response_processor import trigger_mentioned_agents
 
-        response = """```yaml
-summary: "Test"
-findings: []
-recommendations: []
-mentions:
-  - github
-  - github-actions
-confidence: "high"
-```"""
+        response = """[Agent: moderator]
+
+## Summary
+Test
+
+---
+相关人员: @github @github-actions
+"""
         results, allowed, filtered = trigger_mentioned_agents(response, 1, "Title", "Body")
 
         assert results == {}
@@ -135,15 +127,14 @@ confidence: "high"
 
         mock_trigger.return_value = True
 
-        response = """```yaml
-summary: "Test"
-findings: []
-recommendations: []
-mentions:
-  - github-actions
-  - reviewer_a
-confidence: "high"
-```"""
+        response = """[Agent: moderator]
+
+## Summary
+Test
+
+---
+相关人员: @github-actions @reviewer_a
+"""
         results, allowed, filtered = trigger_mentioned_agents(response, 1, "Title", "Body")
 
         assert results == {"reviewer_a": True}
@@ -171,14 +162,14 @@ confidence: "high"
 
         mock_trigger.return_value = False
 
-        response = """```yaml
-summary: "Test"
-findings: []
-recommendations: []
-mentions:
-  - reviewer_a
-confidence: "high"
-```"""
+        response = """[Agent: moderator]
+
+## Summary
+Test
+
+---
+相关人员: @reviewer_a
+"""
         results, allowed, filtered = trigger_mentioned_agents(response, 1, "Title", "Body")
 
         assert results == {"reviewer_a": False}
@@ -202,10 +193,12 @@ class TestProcessAgentResponse:
 summary: "Test"
 findings: []
 recommendations: []
-mentions:
-  - reviewer_a
 confidence: "high"
-```""",
+```
+
+---
+相关人员: @reviewer_a
+""",
             issue_number=1,
             issue_title="Title",
             issue_body="Body",
@@ -224,22 +217,24 @@ confidence: "high"
         mock_trigger.return_value = ({}, [], [])
 
         result = process_agent_response(
-            agent_name="echo",
+            agent_name="moderator",
             response={
                 "response": """```yaml
 summary: "Test"
 findings: []
 recommendations: []
-mentions:
-  - reviewer_b
 confidence: "high"
-```""",
+```
+
+---
+相关人员: @reviewer_b
+""",
                 "cost_usd": 0.01,
             },
             issue_number=1,
         )
 
-        assert result["agent_name"] == "echo"
+        assert result["agent_name"] == "moderator"
         assert "## Summary" in result["response"]
         assert result["mentions"] == ["reviewer_b"]
 
@@ -249,15 +244,17 @@ confidence: "high"
         from issuelab.response_processor import process_agent_response
 
         result = process_agent_response(
-            agent_name="test",
+            agent_name="moderator",
             response="""```yaml
 summary: "Test"
 findings: []
 recommendations: []
-mentions:
-  - reviewer_a
 confidence: "high"
-```""",
+```
+
+---
+相关人员: @reviewer_a
+""",
             issue_number=1,
             auto_dispatch=False,
         )
@@ -271,8 +268,123 @@ confidence: "high"
         """没有mentions不触发dispatch"""
         from issuelab.response_processor import process_agent_response
 
-        result = process_agent_response(agent_name="test", response="No mentions", issue_number=1)
+        result = process_agent_response(agent_name="moderator", response="No mentions", issue_number=1)
 
         assert result["mentions"] == []
         assert result["dispatch_results"] == {}
         mock_trigger.assert_not_called()
+
+
+class TestNormalizeCommentBody:
+    """测试评论正文规范化"""
+
+    def test_normalize_alias_recommendations_confidence(self):
+        from issuelab.response_processor import normalize_comment_body
+
+        body = """[Agent: gqy20]
+
+## Summary
+Alias format summary.
+
+## Key Findings
+- Finding A
+
+## Recommendations
+- Action A
+
+## Confidence
+```yaml
+summary: "Alias format summary."
+findings:
+  - "Finding A"
+recommendations:
+  - "Action A"
+confidence: "medium"
+```
+"""
+        normalized = normalize_comment_body(body, agent_name="gqy20")
+
+        assert "## Recommended Actions" in normalized
+        assert "## Recommendations" not in normalized
+        assert "## Confidence" not in normalized
+        assert "```yaml" not in normalized
+
+    def test_strip_yaml_without_structured_heading(self):
+        from issuelab.response_processor import normalize_comment_body
+
+        body = """[Agent: moderator]
+
+## Summary
+Summary line.
+
+## Key Findings
+- A
+
+## Recommended Actions
+- [ ] Do X
+
+```yaml
+summary: "Summary line."
+findings:
+  - "A"
+recommendations:
+  - "Do X"
+confidence: "high"
+```
+"""
+        normalized = normalize_comment_body(body, agent_name="moderator")
+        assert "```yaml" not in normalized
+        assert "## Summary" in normalized
+        assert "## Key Findings" in normalized
+        assert "## Recommended Actions" in normalized
+
+    def test_standard_structured_heading_still_works(self):
+        from issuelab.response_processor import normalize_comment_body
+
+        body = """[Agent: reviewer_a]
+
+## Summary
+Standard summary.
+
+## Key Findings
+- A
+
+## Recommended Actions
+- [ ] Do X
+
+## Structured (YAML)
+```yaml
+summary: "Standard summary."
+findings:
+  - "A"
+recommendations:
+  - "Do X"
+confidence: "high"
+```
+"""
+        normalized = normalize_comment_body(body, agent_name="reviewer_a")
+        assert "## Structured (YAML)" not in normalized
+        assert "```yaml" not in normalized
+        assert "## Summary" in normalized
+        assert "## Key Findings" in normalized
+        assert "## Recommended Actions" in normalized
+
+    def test_render_sources_section_from_yaml(self):
+        from issuelab.response_processor import normalize_comment_body
+
+        body = """```yaml
+summary: "S"
+findings:
+  - "F1"
+recommendations:
+  - "R1"
+sources:
+  - "https://example.com/a"
+  - "https://example.com/b"
+confidence: "high"
+```"""
+        normalized = normalize_comment_body(body, agent_name="gqy20")
+        assert "## Sources" in normalized
+        assert "https://example.com/a" in normalized
+        assert "https://example.com/b" in normalized
+        assert "```yaml" not in normalized

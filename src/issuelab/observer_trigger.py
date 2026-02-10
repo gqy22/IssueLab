@@ -2,7 +2,7 @@
 Observer 自动触发功能
 
 实现Observer自动触发agent的核心逻辑：
-- 内置agent通过workflow dispatch触发（使用 GitHub App token）
+- 系统agent通过workflow dispatch触发（使用 GitHub App token）
 - 用户agent通过repository/workflow dispatch触发（使用 GitHub App token）
 
 统一使用dispatch机制，无需预创建labels，简化架构。
@@ -11,32 +11,33 @@ Observer 自动触发功能
 import logging
 import os
 import subprocess
-import sys
 
-from issuelab.agents.registry import BUILTIN_AGENTS, is_registered_agent
+from issuelab.agents.registry import is_registered_agent
+from issuelab.agents.registry import is_system_agent as registry_is_system_agent
 
 logger = logging.getLogger(__name__)
 
 
-def is_builtin_agent(agent_name: str) -> bool:
+def is_system_agent(agent_name: str) -> bool:
     """
-    判断是否是内置agent
+    判断是否是系统agent
 
     Args:
         agent_name: Agent名称
 
     Returns:
-        True: 内置agent
+        True: 系统agent
         False: 用户agent
     """
     if not agent_name:
         return False
-    return agent_name.lower() in BUILTIN_AGENTS
+    is_system, _ = registry_is_system_agent(agent_name)
+    return is_system
 
 
-def trigger_builtin_agent(agent_name: str, issue_number: int) -> bool:
+def trigger_system_agent(agent_name: str, issue_number: int) -> bool:
     """
-    触发内置agent（通过workflow dispatch）
+    触发系统agent（通过workflow dispatch）
 
     Args:
         agent_name: Agent名称
@@ -68,7 +69,7 @@ def trigger_builtin_agent(agent_name: str, issue_number: int) -> bool:
         logger.error(f"[ERROR] 触发workflow失败: {e.stderr}")
         return False
     except Exception as e:
-        logger.error(f"[ERROR] 触发内置agent失败: {e}")
+        logger.error(f"[ERROR] 触发系统agent失败: {e}")
         return False
 
 
@@ -109,29 +110,23 @@ def trigger_user_agent(username: str, issue_number: int, issue_title: str, issue
 def dispatch_user_agent(username: str, issue_number: int, issue_title: str, issue_body: str, source_repo: str) -> bool:
     """Dispatch用户agent到fork仓库"""
     try:
-        from issuelab.cli.dispatch import main as dispatch_main
+        from issuelab.cli.dispatch import dispatch_mentions
 
-        sys.argv = [
-            "dispatch",
-            "--mentions",
-            username,
-            "--source-repo",
-            source_repo,
-            "--issue-number",
-            str(issue_number),
-            "--issue-title",
-            issue_title,
-            "--issue-body",
-            issue_body,
-        ]
-
-        exit_code = dispatch_main()
-        if exit_code == 0:
+        summary = dispatch_mentions(
+            mentions=[username],
+            agents_dir="agents",
+            source_repo=source_repo,
+            issue_number=issue_number,
+            issue_title=issue_title,
+            issue_body=issue_body,
+            app_id=os.environ.get("GITHUB_APP_ID"),
+            app_private_key=os.environ.get("GITHUB_APP_PRIVATE_KEY"),
+        )
+        if summary.get("success_count", 0) > 0:
             logger.info(f"[OK] 已dispatch用户agent: {username} for #{issue_number}")
             return True
-        else:
-            logger.error(f"[ERROR] dispatch用户agent失败: {username} (exit_code={exit_code})")
-            return False
+        logger.error(f"[ERROR] dispatch用户agent失败: {username} (summary={summary})")
+        return False
 
     except Exception as e:
         logger.error(f"[ERROR] dispatch用户agent异常: {e}")
@@ -152,13 +147,13 @@ def auto_trigger_agent(agent_name: str, issue_number: int, issue_title: str, iss
         True: 触发成功
         False: 触发失败
     """
-    if is_builtin_agent(agent_name):
-        return trigger_builtin_agent(agent_name, issue_number)
+    if is_system_agent(agent_name):
+        return trigger_system_agent(agent_name, issue_number)
     elif is_registered_agent(agent_name)[0]:
         return trigger_user_agent(agent_name, issue_number, issue_title, issue_body)
     else:
         logger.warning(
-            f"[WARNING] Agent '{agent_name}' 不是内置 agent 也未注册，跳过触发。 "
+            f"[WARNING] Agent '{agent_name}' 不是系统 agent 也未注册，跳过触发。 "
             f"Issue #{issue_number} 的 observer 可能输出了无效的 agent 名称。"
         )
         return False

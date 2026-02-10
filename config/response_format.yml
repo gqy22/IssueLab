@@ -1,13 +1,6 @@
 version: 1
 force_normalize: false
 
-structured_fields:
-  - summary
-  - findings
-  - recommendations
-  - mentions
-  - confidence
-
 sections:
   summary: "## Summary"
   findings: "## Key Findings"
@@ -15,18 +8,9 @@ sections:
   structured: "## Structured (YAML)"
 
 limits:
-  summary_max_chars: 160
+  summary_max_chars: 400
   findings_count: 5
   findings_max_chars: 160
   actions_max_count: 3
   actions_max_chars: 160
   mentions_max_count: 5
-
-rules:
-  mentions_only_in_actions: true
-  yaml_required: true
-
-notes:
-  - mentions is required when you want to notify others; it must be a list of GitHub usernames (without @).
-  - do not use @mentions in the free-text body; use the mentions field instead.
-  - observer should include decision fields in YAML: analysis, should_trigger, reason, agent, comment.

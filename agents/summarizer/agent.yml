@@ -1,0 +1,18 @@
+name: "summarizer"
+owner: summarizer
+agent_type: system
+description: "共识汇总代理 - 共识形成、分歧梳理、行动项生成。"
+
+enabled: true
+max_turns: 100
+max_budget_usd: 10.0
+timeout_seconds: 600
+
+enable_skills: false
+enable_subagents: false
+enable_mcp: false
+enable_system_mcp: false
+output_template: concise_review_v1
+
+repository: "gqy20/IssueLab"
+branch: "main"

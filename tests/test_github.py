@@ -3,7 +3,9 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from issuelab.tools.github import get_issue_info, post_comment, update_label
+import pytest
+
+from issuelab.tools.github import MAX_COMMENT_LENGTH, get_issue_info, post_comment, truncate_text, update_label
 
 
 def test_get_issue_info():
@@ -34,19 +36,8 @@ def test_post_comment():
 
 
 def test_post_comment_limits_mentions(monkeypatch):
-    """相关人员区域最多输出 2 个，按出现次数排序"""
-    body = """```yaml
-summary: "Test"
-findings: []
-recommendations: []
-mentions:
-  - arxiv_observer
-  - gqy22
-  - observer
-  - summarizer
-  - moderator
-confidence: "high"
-```"""
+    """相关人员区域按配置上限输出"""
+    body = "分析正文\n\n---\n相关人员: @arxiv_observer @gqy22 @observer @summarizer @moderator"
 
     captured = {}
 
@@ -56,7 +47,10 @@ confidence: "high"
 
     monkeypatch.setattr("issuelab.tools.github.subprocess.run", fake_run)
     monkeypatch.setattr("issuelab.tools.github.os.unlink", lambda _path: None)
-    monkeypatch.setattr("issuelab.mention_policy.filter_mentions", lambda mentions, policy=None: (mentions, []))
+    monkeypatch.setattr("issuelab.tools.github._load_mentions_max_count", lambda: 2)
+    monkeypatch.setattr(
+        "issuelab.mention_policy.filter_mentions", lambda mentions, policy=None, issue_number=None: (mentions, [])
+    )
 
     result = post_comment(1, body)
     assert result is True
@@ -70,6 +64,138 @@ confidence: "high"
     assert last_line == "相关人员: @arxiv_observer @gqy22"
 
 
+def test_post_comment_mentions_limit_from_config(monkeypatch):
+    body = "分析正文\n\n---\n相关人员: @a1 @a2 @a3 @a4"
+
+    captured = {}
+
+    def fake_run(cmd, capture_output, text, env):
+        captured["cmd"] = cmd
+        return MagicMock(returncode=0)
+
+    monkeypatch.setattr("issuelab.tools.github.subprocess.run", fake_run)
+    monkeypatch.setattr("issuelab.tools.github.os.unlink", lambda _path: None)
+    monkeypatch.setattr("issuelab.tools.github._load_mentions_max_count", lambda: 3)
+    monkeypatch.setattr(
+        "issuelab.mention_policy.filter_mentions", lambda mentions, policy=None, issue_number=None: (mentions, [])
+    )
+
+    result = post_comment(1, body)
+    assert result is True
+
+    cmd = captured.get("cmd", [])
+    body_path = cmd[cmd.index("--body-file") + 1]
+    content = Path(body_path).read_text(encoding="utf-8")
+    assert content.strip().splitlines()[-1] == "相关人员: @a1 @a2 @a3"
+
+
+def test_post_comment_replaces_existing_controlled_footer(monkeypatch):
+    body = "分析正文\n\n---\n相关人员: @legacy1 @legacy2"
+    captured = {}
+
+    def fake_run(cmd, capture_output, text, env):
+        captured["cmd"] = cmd
+        return MagicMock(returncode=0)
+
+    monkeypatch.setattr("issuelab.tools.github.subprocess.run", fake_run)
+    monkeypatch.setattr("issuelab.tools.github.os.unlink", lambda _path: None)
+    monkeypatch.setattr(
+        "issuelab.mention_policy.filter_mentions", lambda mentions, policy=None, issue_number=None: (mentions, [])
+    )
+
+    result = post_comment(1, body, mentions=["alice"])
+    assert result is True
+
+    cmd = captured.get("cmd", [])
+    body_path = cmd[cmd.index("--body-file") + 1]
+    content = Path(body_path).read_text(encoding="utf-8")
+    assert content.count("相关人员:") == 1
+    assert content.strip().splitlines()[-1] == "相关人员: @alice"
+
+
+def test_post_comment_keeps_original_body_without_normalize(monkeypatch):
+    body = """[Agent: reviewer_a]
+
+## Summary
+保留正文
+
+## Structured (YAML)
+```yaml
+summary: "hello"
+mentions:
+  - alice
+```
+"""
+
+    captured = {}
+
+    def fake_run(cmd, capture_output, text, env):
+        captured["cmd"] = cmd
+        return MagicMock(returncode=0)
+
+    monkeypatch.setattr("issuelab.tools.github.subprocess.run", fake_run)
+    monkeypatch.setattr("issuelab.tools.github.os.unlink", lambda _path: None)
+    monkeypatch.setattr(
+        "issuelab.mention_policy.filter_mentions", lambda mentions, policy=None, issue_number=None: (mentions, [])
+    )
+
+    result = post_comment(1, body)
+    assert result is True
+
+    cmd = captured.get("cmd", [])
+    body_path = cmd[cmd.index("--body-file") + 1]
+    content = Path(body_path).read_text(encoding="utf-8")
+    assert "## Structured (YAML)" in content
+    assert "```yaml" in content
+
+
+def test_post_comment_with_explicit_mentions_does_not_parse_body(monkeypatch):
+    captured = {"filtered": None}
+
+    def fake_run(cmd, capture_output, text, env):
+        captured["cmd"] = cmd
+        return MagicMock(returncode=0)
+
+    def fake_filter_mentions(mentions, policy=None, issue_number=None):
+        captured["filtered"] = list(mentions)
+        return mentions, []
+
+    monkeypatch.setattr("issuelab.tools.github.subprocess.run", fake_run)
+    monkeypatch.setattr("issuelab.tools.github.os.unlink", lambda _path: None)
+    monkeypatch.setattr("issuelab.mention_policy.filter_mentions", fake_filter_mentions)
+    monkeypatch.setattr(
+        "issuelab.utils.mentions.extract_controlled_mentions",
+        lambda _body: (_ for _ in ()).throw(AssertionError("should not parse body mentions")),
+    )
+
+    result = post_comment(1, "plain body", mentions=["alice", "bob"])
+    assert result is True
+    assert captured["filtered"] == ["alice", "bob"]
+
+
+def test_post_comment_does_not_fallback_to_plain_text_mentions(monkeypatch):
+    captured = {}
+
+    def fake_run(cmd, capture_output, text, env):
+        captured["cmd"] = cmd
+        return MagicMock(returncode=0)
+
+    monkeypatch.setattr("issuelab.tools.github.subprocess.run", fake_run)
+    monkeypatch.setattr("issuelab.tools.github.os.unlink", lambda _path: None)
+    monkeypatch.setattr("issuelab.utils.mentions.extract_controlled_mentions", lambda _body: [])
+    monkeypatch.setattr(
+        "issuelab.mention_policy.filter_mentions", lambda mentions, policy=None, issue_number=None: (mentions, [])
+    )
+
+    result = post_comment(1, "plain body with @alice")
+    assert result is True
+
+    cmd = captured.get("cmd", [])
+    body_path = cmd[cmd.index("--body-file") + 1]
+    content = Path(body_path).read_text(encoding="utf-8")
+    assert "相关人员:" not in content
+
+
 def test_update_label():
     """测试更新标签"""
     with patch("issuelab.tools.github.subprocess.run") as mock_run:
@@ -80,3 +206,31 @@ def test_update_label():
         # 新的实现返回 bool
         assert result is True
         mock_run.assert_called_once()
+
+
+@pytest.mark.parametrize("text", ["Short text", "a" * MAX_COMMENT_LENGTH])
+def test_truncate_text_not_truncated_cases(text: str):
+    result = truncate_text(text)
+    assert result == text
+    assert "已截断" not in result
+
+
+@pytest.mark.parametrize(
+    ("text", "max_length"),
+    [
+        ("a" * (MAX_COMMENT_LENGTH + 1000), MAX_COMMENT_LENGTH),
+        (("".join(f"段落{i}\n\n" for i in range(100))) * 100, 1000),
+        ("a" * 1000, 100),
+    ],
+)
+def test_truncate_text_truncated_cases(text: str, max_length: int):
+    result = truncate_text(text, max_length=max_length)
+    assert len(result) <= max_length
+    assert "已截断" in result
+
+
+def test_truncate_text_preserves_encoding():
+    text = "中文测试" * 5000
+    result = truncate_text(text, max_length=1000)
+    assert len(result) <= 1000
+    assert isinstance(result, str)

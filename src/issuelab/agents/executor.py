@@ -3,10 +3,15 @@
 处理 Agent 的执行、消息流和日志记录。
 """
 
+import asyncio
 import os
+import re
+import sys
+from pathlib import Path
 from typing import Any, cast
 
 import anyio
+import yaml
 from claude_agent_sdk import (
     AssistantMessage,
     ResultMessage,
@@ -19,14 +24,33 @@ from claude_agent_sdk import (
 
 from issuelab.agents.config import AgentConfig
 from issuelab.agents.options import create_agent_options, format_mcp_servers_for_prompt
+from issuelab.agents.registry import get_agent_config, is_system_agent
 from issuelab.logging_config import get_logger
 from issuelab.retry import retry_async
+from issuelab.utils.yaml_text import extract_yaml_block
 
 logger = get_logger(__name__)
 
-_OUTPUT_SCHEMA_BLOCK = (
+_SYSTEM_EXECUTION_TIMEOUT_SECONDS = 600
+
+_ALLOWED_OUTPUT_FORMATS = {"markdown", "yaml", "hybrid"}
+_ALLOWED_MENTIONS_MODES = {"controlled", "required", "off"}
+_GLOBAL_OUTPUT_TEMPLATES_CACHE: dict[str, Any] | None = None
+_AGENT_OUTPUT_CONFIG_CACHE: dict[str, dict[str, Any]] = {}
+
+_OUTPUT_SCHEMA_BLOCK_MARKDOWN = (
     "\n\n## Output Format (required)\n"
-    "请严格输出以下 YAML：\n\n"
+    "请使用 Markdown 输出，禁止输出 YAML/JSON 代码块。\n\n"
+    "请严格使用以下结构：\n"
+    "- `## Summary`：1-3 句结论\n"
+    "- `## Key Findings`：2-5 条要点（列表）\n"
+    "- `## Recommended Actions`：1-5 条可执行动作（任务列表）\n"
+    "- 如需触发协作，仅在文末使用受控区：`---\\n相关人员: @user1 @user2` 或 `协作请求:` 列表\n"
+)
+
+_OUTPUT_SCHEMA_BLOCK_YAML = (
+    "\n\n## Output Format (required)\n"
+    "优先输出以下 YAML；若无法稳定产出 YAML，可降级为结构化 Markdown（Summary/Findings/Recommendations）：\n\n"
     "```yaml\n"
     'summary: ""\n'
     "findings:\n"
@@ -37,15 +61,227 @@ _OUTPUT_SCHEMA_BLOCK = (
     "```\n"
 )
 
+_OUTPUT_SCHEMA_BLOCK_HYBRID = (
+    "\n\n## Output Format (required)\n"
+    "优先使用 Markdown 输出；仅在你无法稳定按 Markdown 结构输出时，才允许使用单个 YAML 代码块。\n"
+    "Markdown 结构优先：\n"
+    "- `## Summary`\n"
+    "- `## Key Findings`\n"
+    "- `## Recommended Actions`\n"
+)
 
-def _append_output_schema(prompt: str) -> str:
+_DEFAULT_ATTEMPT_TIMEOUT_SECONDS = 90
+
+
+def _classify_run_exception(exc: Exception) -> str:
+    if isinstance(exc, TimeoutError):
+        return "timeout"
+    if isinstance(exc, asyncio.CancelledError):
+        return "timeout"
+    return "unknown"
+
+
+def _should_retry_run_exception(exc: Exception) -> bool:
+    return not isinstance(exc, TimeoutError | asyncio.CancelledError)
+
+
+def _normalize_output_format(value: Any) -> str:
+    if isinstance(value, str):
+        cleaned = value.strip().lower()
+        if cleaned in _ALLOWED_OUTPUT_FORMATS:
+            return cleaned
+    return "markdown"
+
+
+def _normalize_mentions_mode(value: Any) -> str:
+    if isinstance(value, str):
+        cleaned = value.strip().lower()
+        if cleaned in _ALLOWED_MENTIONS_MODES:
+            return cleaned
+    return "controlled"
+
+
+def _get_project_root() -> Path:
+    return Path.cwd()
+
+
+def _load_global_output_templates(root_dir: Path | None = None) -> dict[str, Any]:
+    global _GLOBAL_OUTPUT_TEMPLATES_CACHE
+    if _GLOBAL_OUTPUT_TEMPLATES_CACHE is not None:
+        return _GLOBAL_OUTPUT_TEMPLATES_CACHE
+
+    root = root_dir or _get_project_root()
+    path = root / "config" / "output_templates.yml"
+    if not path.exists():
+        _GLOBAL_OUTPUT_TEMPLATES_CACHE = {}
+        return _GLOBAL_OUTPUT_TEMPLATES_CACHE
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        _GLOBAL_OUTPUT_TEMPLATES_CACHE = data if isinstance(data, dict) else {}
+    except Exception:
+        _GLOBAL_OUTPUT_TEMPLATES_CACHE = {}
+    return _GLOBAL_OUTPUT_TEMPLATES_CACHE
+
+
+def _load_agent_output_config(agent_name: str, root_dir: Path | None = None) -> dict[str, Any]:
+    key = f"{root_dir or _get_project_root()}::{agent_name}"
+    if key in _AGENT_OUTPUT_CONFIG_CACHE:
+        return _AGENT_OUTPUT_CONFIG_CACHE[key]
+
+    root = root_dir or _get_project_root()
+    path = root / "agents" / agent_name / "output_config.yml"
+    if not path.exists():
+        _AGENT_OUTPUT_CONFIG_CACHE[key] = {}
+        return _AGENT_OUTPUT_CONFIG_CACHE[key]
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        _AGENT_OUTPUT_CONFIG_CACHE[key] = data if isinstance(data, dict) else {}
+    except Exception:
+        _AGENT_OUTPUT_CONFIG_CACHE[key] = {}
+    return _AGENT_OUTPUT_CONFIG_CACHE[key]
+
+
+def _resolve_output_template(
+    agent_name: str, template_id: str | None, *, root_dir: Path | None = None, default_template: str = "review_v1"
+) -> dict[str, Any] | None:
+    global_config = _load_global_output_templates(root_dir=root_dir)
+    global_templates = global_config.get("templates", {}) if isinstance(global_config, dict) else {}
+    agent_config = _load_agent_output_config(agent_name, root_dir=root_dir)
+    local_templates = agent_config.get("templates", {}) if isinstance(agent_config, dict) else {}
+
+    template_name = template_id
+    if not template_name:
+        local_default = agent_config.get("default_template")
+        global_default = global_config.get("default_template") if isinstance(global_config, dict) else None
+        if isinstance(local_default, str) and local_default.strip():
+            template_name = local_default.strip()
+        elif isinstance(global_default, str) and global_default.strip():
+            template_name = global_default.strip()
+        else:
+            template_name = default_template
+
+    if template_name.startswith("local:"):
+        local_name = template_name.split(":", 1)[1].strip()
+        candidate = local_templates.get(local_name)
+        return candidate if isinstance(candidate, dict) else None
+
+    if (
+        isinstance(local_templates, dict)
+        and template_name in local_templates
+        and isinstance(local_templates[template_name], dict)
+    ):
+        return local_templates[template_name]
+    if (
+        isinstance(global_templates, dict)
+        and template_name in global_templates
+        and isinstance(global_templates[template_name], dict)
+    ):
+        return global_templates[template_name]
+    return None
+
+
+def _build_template_instruction(
+    template: dict[str, Any], *, mentions_mode: str, output_format: str, section_order_override: list[str] | None = None
+) -> str | None:
+    sections = template.get("sections")
+    section_order = section_order_override or template.get("section_order")
+    if not isinstance(sections, dict) or not isinstance(section_order, list):
+        return None
+
+    ordered: list[str] = [str(item) for item in section_order if isinstance(item, str)]
+    if not ordered:
+        return None
+
+    lines = ["", "", "## Output Format (required)"]
+    if output_format == "hybrid":
+        lines.append("优先使用 Markdown；仅在无法稳定输出时允许单个 YAML 代码块。")
+    else:
+        lines.append("请使用 Markdown 输出，禁止输出 YAML/JSON 代码块。")
+    lines.append("")
+    lines.append("请按以下段落顺序输出：")
+
+    for index, section_key in enumerate(ordered, 1):
+        config = sections.get(section_key)
+        if not isinstance(config, dict):
+            continue
+        title = str(config.get("title") or f"## {section_key.replace('_', ' ').title()}").strip()
+        guidance = str(config.get("guidance") or "").strip()
+        if guidance:
+            lines.append(f"{index}. `{title}`：{guidance}")
+        else:
+            lines.append(f"{index}. `{title}`")
+
+    mention_instruction = {
+        "controlled": "如需触发协作，仅在文末使用受控区：`---\\n相关人员: @user1 @user2` 或 `协作请求:` 列表。",
+        "required": "必须在文末使用受控区输出协作对象：`---\\n相关人员: @user1 @user2` 或 `协作请求:` 列表。",
+        "off": "不要输出 `相关人员`/`协作请求` 受控区。",
+    }.get(mentions_mode, "如需触发协作，仅在文末使用受控区：`---\\n相关人员: @user1 @user2` 或 `协作请求:` 列表。")
+    lines.extend(["", f"- {mention_instruction}"])
+    return "\n".join(lines)
+
+
+def _get_output_preferences(agent_name: str) -> tuple[str, str, str | None, list[str] | None]:
+    try:
+        config = get_agent_config(agent_name) or {}
+    except Exception:
+        config = {}
+
+    template_id = config.get("output_template")
+    if not isinstance(template_id, str):
+        template_id = None
+
+    section_order = config.get("section_order")
+    parsed_section_order: list[str] | None = None
+    if isinstance(section_order, list) and all(isinstance(x, str) for x in section_order):
+        parsed_section_order = [str(x) for x in section_order]
+
+    return (
+        _normalize_output_format(config.get("output_format")),
+        _normalize_mentions_mode(config.get("mentions_mode")),
+        template_id,
+        parsed_section_order,
+    )
+
+
+def _append_output_schema(
+    prompt: str,
+    agent_name: str,
+    stage_name: str | None = None,
+    *,
+    output_format: str = "markdown",
+    mentions_mode: str = "controlled",
+    output_template: str | None = None,
+    section_order: list[str] | None = None,
+) -> str:
     """为 prompt 注入统一输出格式（如果尚未注入）。"""
     if "## Output Format (required)" in prompt:
         return prompt
-    return f"{prompt}{_OUTPUT_SCHEMA_BLOCK}"
+    if stage_name:
+        return f"{prompt}{_OUTPUT_SCHEMA_BLOCK_YAML}"
+
+    mention_instruction = {
+        "controlled": "- 如需触发协作，仅在文末使用受控区：`---\\n相关人员: @user1 @user2` 或 `协作请求:` 列表\n",
+        "required": "- 必须在文末使用受控区输出协作对象：`---\\n相关人员: @user1 @user2` 或 `协作请求:` 列表\n",
+        "off": "- 不要输出 `相关人员`/`协作请求` 受控区\n",
+    }.get(mentions_mode, "- 如需触发协作，仅在文末使用受控区：`---\\n相关人员: @user1 @user2` 或 `协作请求:` 列表\n")
+
+    if output_format == "yaml":
+        return f"{prompt}{_OUTPUT_SCHEMA_BLOCK_YAML}"
+
+    template = _resolve_output_template(agent_name, output_template)
+    if template:
+        rendered = _build_template_instruction(
+            template, mentions_mode=mentions_mode, output_format=output_format, section_order_override=section_order
+        )
+        if rendered:
+            return f"{prompt}{rendered}"
+
+    if output_format == "hybrid":
+        return f"{prompt}{_OUTPUT_SCHEMA_BLOCK_HYBRID}{mention_instruction}"
+    return f"{prompt}{_OUTPUT_SCHEMA_BLOCK_MARKDOWN}{mention_instruction}"
 
 
-async def run_single_agent(prompt: str, agent_name: str) -> dict:
+async def run_single_agent(prompt: str, agent_name: str, *, stage_name: str | None = None) -> dict:
     """运行单个代理（带完善的中间日志监听）
 
     Args:
@@ -63,9 +299,14 @@ async def run_single_agent(prompt: str, agent_name: str) -> dict:
     """
     logger.info(f"[{agent_name}] 开始运行 Agent")
     logger.debug(f"[{agent_name}] Prompt 长度: {len(prompt)} 字符")
+    output_format, mentions_mode, output_template, section_order = _get_output_preferences(agent_name)
 
     # 执行信息收集
     execution_info: dict[str, Any] = {
+        "ok": True,
+        "error_type": None,
+        "error_message": None,
+        "stage": stage_name,
         "response": "",
         "cost_usd": 0.0,
         "num_turns": 0,
@@ -84,7 +325,15 @@ async def run_single_agent(prompt: str, agent_name: str) -> dict:
         tool_calls = []
         first_result = True
 
-        effective_prompt = _append_output_schema(prompt)
+        effective_prompt = _append_output_schema(
+            prompt,
+            agent_name,
+            stage_name=stage_name,
+            output_format=output_format,
+            mentions_mode=mentions_mode,
+            output_template=output_template,
+            section_order=section_order,
+        )
         async for message in query(prompt=effective_prompt, options=options):
             # AssistantMessage: AI 响应（文本或工具调用）
             if isinstance(message, AssistantMessage):
@@ -98,8 +347,8 @@ async def run_single_agent(prompt: str, agent_name: str) -> dict:
                         response_text.append(text)
                         execution_info["text_blocks"].append(text)
 
-                        # 终端流式输出
-                        print(text, end="", flush=True)
+                        # 终端流式输出（写入 stderr，避免污染 stdout）
+                        print(text, end="", flush=True, file=sys.stderr)
                         # 日志记录（INFO 级别）
                         logger.info(f"[{agent_name}] [Text] {text[:100]}...")
 
@@ -118,8 +367,8 @@ async def run_single_agent(prompt: str, agent_name: str) -> dict:
                         tool_calls.append(tool_name)
                         execution_info["tool_calls"].append(tool_name)
 
-                        # 终端输出
-                        print(f"\n[{tool_name}] id={tool_use_id}", end="", flush=True)
+                        # 终端输出（写入 stderr，避免污染 stdout）
+                        print(f"\n[{tool_name}] id={tool_use_id}", end="", flush=True, file=sys.stderr)
                         if tool_name == "Skill" or tool_name.startswith("Skill"):
                             logger.info(f"[{agent_name}] [Skill] {tool_name}(id={tool_use_id})")
                         if tool_name == "Task":
@@ -186,8 +435,6 @@ async def run_single_agent(prompt: str, agent_name: str) -> dict:
     def _get_timeout_seconds() -> int | None:
         config = None
         try:
-            from issuelab.agents.registry import get_agent_config
-
             config = get_agent_config(agent_name)
         except Exception:
             config = None
@@ -198,20 +445,59 @@ async def run_single_agent(prompt: str, agent_name: str) -> dict:
                 return value if value > 0 else None
             except (TypeError, ValueError):
                 return None
+        if is_system_agent(agent_name)[0]:
+            return _SYSTEM_EXECUTION_TIMEOUT_SECONDS
         return AgentConfig().timeout_seconds
+
+    def _get_attempt_timeout_seconds(overall_timeout_seconds: int | None) -> int | None:
+        config = None
+        try:
+            config = get_agent_config(agent_name)
+        except Exception:
+            config = None
+
+        if config and "attempt_timeout_seconds" in config:
+            try:
+                value = int(config["attempt_timeout_seconds"])
+                return value if value > 0 else None
+            except (TypeError, ValueError):
+                return None
+        if not overall_timeout_seconds:
+            return None
+        return max(1, min(_DEFAULT_ATTEMPT_TIMEOUT_SECONDS, int(overall_timeout_seconds)))
 
     try:
         timeout_seconds = _get_timeout_seconds()
+        attempt_timeout_seconds = _get_attempt_timeout_seconds(timeout_seconds)
+
+        async def _query_agent_with_attempt_timeout() -> str:
+            if attempt_timeout_seconds:
+                with anyio.fail_after(attempt_timeout_seconds):
+                    return await _query_agent()
+            return await _query_agent()
+
         if timeout_seconds:
             with anyio.fail_after(timeout_seconds):
                 response = cast(
                     str,
-                    await retry_async(_query_agent, max_retries=3, initial_delay=2.0, backoff_factor=2.0),
+                    await retry_async(
+                        _query_agent_with_attempt_timeout,
+                        max_retries=3,
+                        initial_delay=2.0,
+                        backoff_factor=2.0,
+                        should_retry=_should_retry_run_exception,
+                    ),
                 )
         else:
             response = cast(
                 str,
-                await retry_async(_query_agent, max_retries=3, initial_delay=2.0, backoff_factor=2.0),
+                await retry_async(
+                    _query_agent_with_attempt_timeout,
+                    max_retries=3,
+                    initial_delay=2.0,
+                    backoff_factor=2.0,
+                    should_retry=_should_retry_run_exception,
+                ),
             )
         execution_info["response"] = response
 
@@ -229,9 +515,22 @@ async def run_single_agent(prompt: str, agent_name: str) -> dict:
 
         return execution_info
     except Exception as e:
-        logger.error(f"[{agent_name}] 运行失败: {e}", exc_info=True)
+        error_type = _classify_run_exception(e)
+        timeout_hint = ""
+        if error_type == "timeout":
+            timeout_hint = (
+                f" (attempt_timeout_seconds={attempt_timeout_seconds}, overall_timeout_seconds={timeout_seconds})"
+            )
+        logger.error(f"[{agent_name}] 运行失败: {e}{timeout_hint}", exc_info=True)
+        error_message = str(e) or error_type
+        if timeout_hint:
+            error_message = f"{error_message}{timeout_hint}"
         return {
-            "response": f"[错误] Agent {agent_name} 执行失败: {e}",
+            "ok": False,
+            "error_type": error_type,
+            "error_message": error_message,
+            "stage": stage_name,
+            "response": f"[系统护栏] Agent {agent_name} 执行失败（{error_type}）: {error_message}",
             "cost_usd": 0.0,
             "num_turns": 0,
             "tool_calls": [],
@@ -245,6 +544,474 @@ async def run_single_agent_text(prompt: str, agent_name: str | None = None) -> s
     name = agent_name or "default"
     result = await run_single_agent(prompt, name)
     return result.get("response", "")
+
+
+def _extract_urls(text: str) -> list[str]:
+    """从文本中提取去重后的 URL 列表。"""
+    if not text:
+        return []
+    found = re.findall(r"https?://[^\s)>\]\"']+", text)
+    urls: list[str] = []
+    for url in found:
+        cleaned = url.rstrip(".,;:!?")
+        if cleaned not in urls:
+            urls.append(cleaned)
+    return urls
+
+
+def _extract_sources_from_yaml(text: str) -> list[str]:
+    """从 YAML sources 字段提取 URL。"""
+    yaml_text = extract_yaml_block(text)
+    if not yaml_text:
+        return []
+    try:
+        parsed = yaml.safe_load(yaml_text) or {}
+    except Exception:
+        return []
+    if not isinstance(parsed, dict):
+        return []
+    sources = parsed.get("sources", [])
+    urls: list[str] = []
+    if isinstance(sources, list):
+        for item in sources:
+            if isinstance(item, str):
+                urls.extend(_extract_urls(item))
+            elif isinstance(item, dict):
+                url_value = str(item.get("url", "")).strip()
+                if url_value:
+                    urls.extend(_extract_urls(url_value))
+    elif isinstance(sources, str):
+        urls.extend(_extract_urls(sources))
+
+    deduped: list[str] = []
+    for url in urls:
+        if url not in deduped:
+            deduped.append(url)
+    return deduped
+
+
+def _validate_researcher_stage_output(text: str) -> tuple[bool, str]:
+    yaml_text = extract_yaml_block(text)
+    if not yaml_text:
+        return False, "缺少 YAML 输出块"
+
+    try:
+        parsed = yaml.safe_load(yaml_text)
+    except Exception as exc:
+        return False, f"YAML 解析失败: {exc}"
+
+    if not isinstance(parsed, dict):
+        return False, "YAML 根节点必须为对象"
+
+    evidence = parsed.get("evidence")
+    if not isinstance(evidence, list) or len(evidence) == 0:
+        return False, "Researcher 输出缺少 evidence 列表"
+
+    has_url = False
+    for item in evidence:
+        if isinstance(item, dict) and str(item.get("url", "")).startswith(("http://", "https://")):
+            has_url = True
+            break
+    if not has_url:
+        return False, "Researcher evidence 中缺少可追溯 URL"
+
+    return True, ""
+
+
+def _collect_source_urls(text: str) -> list[str]:
+    """优先从 YAML sources 收集，否则回退为全文 URL。"""
+    from_yaml = _extract_sources_from_yaml(text)
+    if from_yaml:
+        return from_yaml
+    return _extract_urls(text)
+
+
+def _is_gqy20_multistage_enabled(agent_name: str) -> bool:
+    if agent_name != "gqy20":
+        return False
+    return os.environ.get("ISSUELAB_GQY20_MULTISTAGE", "1").lower() not in {"0", "false", "no", "off"}
+
+
+async def _run_gqy20_multistage(agent_prompt: str, issue_number: int, task_context: str) -> dict[str, Any]:
+    """gqy20 专用多阶段流程：Researcher -> Analyst -> Critic -> Verifier -> Judge。"""
+    stages: dict[str, str] = {}
+    total_cost = 0.0
+    total_turns = 0
+    total_input_tokens = 0
+    total_output_tokens = 0
+    total_tokens = 0
+    tool_calls: list[str] = []
+
+    def _build_failure_result(stage_name: str, error_type: str, error_message: str) -> dict[str, Any]:
+        unique_tools: list[str] = []
+        for tool in tool_calls:
+            if tool not in unique_tools:
+                unique_tools.append(tool)
+        return {
+            "ok": False,
+            "error_type": error_type,
+            "error_message": error_message,
+            "failed_stage": stage_name,
+            "response": (
+                f"[Agent: gqy20]\n"
+                f"[系统护栏] 多阶段流程在 {stage_name} 阶段中断。\n"
+                f"- error_type: {error_type}\n"
+                f"- error_message: {error_message}\n"
+                "- 建议：重试任务，或先排查工具可用性后再运行。"
+            ),
+            "cost_usd": total_cost,
+            "num_turns": total_turns,
+            "tool_calls": unique_tools,
+            "input_tokens": total_input_tokens,
+            "output_tokens": total_output_tokens,
+            "total_tokens": total_tokens,
+            "stages": stages,
+        }
+
+    def _dedupe_tools() -> list[str]:
+        unique_tools: list[str] = []
+        for tool in tool_calls:
+            if tool not in unique_tools:
+                unique_tools.append(tool)
+        return unique_tools
+
+    async def _run_stage(stage_name: str, task: str, *, structured_output: bool = True) -> dict[str, Any]:
+        nonlocal total_cost, total_turns, total_input_tokens, total_output_tokens, total_tokens
+        stage_prompt = f"""{agent_prompt}
+
+---
+
+## Multi-Stage Workflow
+你正在执行 gqy20 的多阶段高质量流程。
+当前阶段：{stage_name}
+
+请严格遵守：
+- 优先大量使用可用工具进行检索、核验、对照
+- 不得在证据不足时给出确定性结论
+- 如涉及事实陈述，尽可能给出可追溯 URL
+
+## 当前任务
+{task}
+"""
+        result = await run_single_agent(stage_prompt, "gqy20", stage_name=stage_name if structured_output else None)
+        total_cost += float(result.get("cost_usd", 0.0))
+        total_turns += int(result.get("num_turns", 0))
+        total_input_tokens += int(result.get("input_tokens", 0))
+        total_output_tokens += int(result.get("output_tokens", 0))
+        total_tokens += int(result.get("total_tokens", 0))
+        stage_tools = result.get("tool_calls", [])
+        if isinstance(stage_tools, list):
+            tool_calls.extend(str(t) for t in stage_tools)
+        text = str(result.get("response", "")).strip()
+        stages[stage_name] = text
+        if not bool(result.get("ok", True)):
+            return {
+                "ok": False,
+                "error_type": str(result.get("error_type") or "unknown"),
+                "error_message": str(result.get("error_message") or f"{stage_name} 执行失败"),
+                "response": text,
+            }
+        if stage_name == "Researcher":
+            valid, message = _validate_researcher_stage_output(text)
+            if not valid:
+                return {
+                    "ok": False,
+                    "error_type": "invalid_output",
+                    "error_message": message,
+                    "response": text,
+                }
+        return {
+            "ok": True,
+            "error_type": None,
+            "error_message": None,
+            "response": text,
+        }
+
+    researcher_task = f"""
+请先只做“证据收集”，不要下最终结论。
+
+Issue #{issue_number} 上下文：
+{task_context}
+
+输出要求（YAML）：
+```yaml
+summary: ""
+evidence:
+  - claim: ""
+    source: ""
+    url: ""
+    confidence: "low|medium|high"
+open_questions:
+  - ""
+confidence: "low|medium|high"
+```
+"""
+    research_stage = await _run_stage("Researcher", researcher_task)
+    if not research_stage["ok"]:
+        # 放宽门禁：Researcher 结构化输出不合格时，降级为单阶段回答而非直接失败。
+        if str(research_stage.get("error_type") or "") == "invalid_output":
+            logger.warning("[gqy20] Researcher 输出结构不完整，降级为单阶段回复: %s", research_stage["error_message"])
+            fallback_prompt = f"""{agent_prompt}
+
+---
+
+## 当前任务
+你需要分析 GitHub Issue #{issue_number}：
+
+{task_context}
+
+---
+
+降级策略（重要）：
+- 当前多阶段证据收集未满足结构化门槛，请直接给出可发布答复
+- 请在开头明确标注：证据不足，基于有限信息
+- 必须使用 Markdown 输出，禁止 YAML/JSON 代码块
+- 使用以下结构：
+  - ## Summary
+  - ## Key Findings
+  - ## Evidence Gaps
+  - ## Recommended Actions
+  - ## Sources
+- 若涉及事实，请尽量给出可追溯链接；无法核验时明确说明不确定性
+"""
+            fallback_result = await run_single_agent(fallback_prompt, "gqy20")
+            total_cost += float(fallback_result.get("cost_usd", 0.0))
+            total_turns += int(fallback_result.get("num_turns", 0))
+            total_input_tokens += int(fallback_result.get("input_tokens", 0))
+            total_output_tokens += int(fallback_result.get("output_tokens", 0))
+            total_tokens += int(fallback_result.get("total_tokens", 0))
+            stage_tools = fallback_result.get("tool_calls", [])
+            if isinstance(stage_tools, list):
+                tool_calls.extend(str(t) for t in stage_tools)
+            fallback_text = str(fallback_result.get("response", "")).strip()
+            if fallback_text and "证据不足" not in fallback_text:
+                fallback_text = "证据不足，基于有限信息。\n\n" + fallback_text
+            stages["FallbackSingleStage"] = fallback_text
+
+            if not bool(fallback_result.get("ok", True)):
+                return _build_failure_result(
+                    "FallbackSingleStage",
+                    str(fallback_result.get("error_type") or "unknown"),
+                    str(fallback_result.get("error_message") or "FallbackSingleStage 阶段失败"),
+                )
+
+            return {
+                "ok": True,
+                "error_type": None,
+                "error_message": None,
+                "response": fallback_text,
+                "cost_usd": total_cost,
+                "num_turns": total_turns,
+                "tool_calls": _dedupe_tools(),
+                "input_tokens": total_input_tokens,
+                "output_tokens": total_output_tokens,
+                "total_tokens": total_tokens,
+                "stages": stages,
+            }
+        return _build_failure_result(
+            "Researcher",
+            str(research_stage.get("error_type") or "unknown"),
+            str(research_stage.get("error_message") or "Researcher 阶段失败"),
+        )
+    research_text = str(research_stage.get("response", ""))
+
+    analyst_task = f"""
+基于 Researcher 证据，产出 2-3 个候选结论版本（不要最终定稿）。
+
+Researcher 输出：
+{research_text}
+
+输出要求（YAML）：
+```yaml
+summary: ""
+candidates:
+  - id: "A"
+    summary: ""
+    findings:
+      - ""
+    recommendations:
+      - ""
+    sources:
+      - ""
+  - id: "B"
+    summary: ""
+    findings:
+      - ""
+    recommendations:
+      - ""
+    sources:
+      - ""
+confidence: "low|medium|high"
+```
+"""
+    analyst_stage = await _run_stage("Analyst", analyst_task)
+    if not analyst_stage["ok"]:
+        return _build_failure_result(
+            "Analyst",
+            str(analyst_stage.get("error_type") or "unknown"),
+            str(analyst_stage.get("error_message") or "Analyst 阶段失败"),
+        )
+    analyst_text = str(analyst_stage.get("response", ""))
+
+    critic_task = f"""
+逐条批判 Analyst 候选结论，识别逻辑漏洞、证据缺口、过度推断和缺失引用。
+
+Researcher 输出：
+{research_text}
+
+Analyst 输出：
+{analyst_text}
+
+输出要求（YAML）：
+```yaml
+summary: ""
+criticisms:
+  - candidate_id: "A"
+    issues:
+      - ""
+    missing_evidence:
+      - ""
+confidence: "low|medium|high"
+```
+"""
+    critic_stage = await _run_stage("Critic", critic_task)
+    if not critic_stage["ok"]:
+        return _build_failure_result(
+            "Critic",
+            str(critic_stage.get("error_type") or "unknown"),
+            str(critic_stage.get("error_message") or "Critic 阶段失败"),
+        )
+    critic_text = str(critic_stage.get("response", ""))
+
+    verifier_task = f"""
+强制核验候选结论的来源链接与证据一致性。
+要求尽可能调用工具验证链接是否可访问、内容是否支持对应结论。
+
+Researcher 输出：
+{research_text}
+
+Analyst 输出：
+{analyst_text}
+
+Critic 输出：
+{critic_text}
+
+输出要求（YAML）：
+```yaml
+summary: ""
+verified_sources:
+  - url: ""
+    status: "verified|partially_verified|unverified"
+    supports:
+      - ""
+verification_gaps:
+  - ""
+confidence: "low|medium|high"
+```
+"""
+    verifier_stage = await _run_stage("Verifier", verifier_task)
+    if not verifier_stage["ok"]:
+        return _build_failure_result(
+            "Verifier",
+            str(verifier_stage.get("error_type") or "unknown"),
+            str(verifier_stage.get("error_message") or "Verifier 阶段失败"),
+        )
+    verifier_text = str(verifier_stage.get("response", ""))
+
+    judge_base_task = f"""
+请综合 Researcher/Analyst/Critic/Verifier 结果，给出最终结论。
+
+要求：
+- 必须优先使用已核验来源
+- 必须输出可追溯链接（sources）
+- 对不确定项明确标注
+
+Researcher 输出：
+{research_text}
+
+Analyst 输出：
+{analyst_text}
+
+Critic 输出：
+{critic_text}
+
+Verifier 输出：
+{verifier_text}
+
+最终输出必须是 Markdown（禁止 YAML/JSON 代码块）：
+- [Agent: gqy20]
+- ## Summary
+- ## Key Findings
+- ## Evidence Gaps
+- ## Recommended Actions
+- ## Sources
+"""
+
+    judge_text = ""
+    source_urls: list[str] = []
+    retry_feedback = ""
+    for attempt in range(3):
+        judge_task = judge_base_task
+        if retry_feedback:
+            judge_task += f"\n\n补充要求（第 {attempt + 1} 次尝试）：\n{retry_feedback}\n"
+        judge_stage = await _run_stage("Judge", judge_task, structured_output=False)
+        if not judge_stage["ok"]:
+            return _build_failure_result(
+                "Judge",
+                str(judge_stage.get("error_type") or "unknown"),
+                str(judge_stage.get("error_message") or "Judge 阶段失败"),
+            )
+        judge_text = str(judge_stage.get("response", ""))
+        source_urls = _collect_source_urls(judge_text)
+        if source_urls:
+            break
+        retry_feedback = "上一版缺少可追溯来源链接。请补全 sources 字段，给出具体 URL，并确保关键结论可追溯。"
+
+    if not source_urls:
+        logger.warning("[gqy20] 多阶段结果缺少 sources，触发单阶段回退")
+        fallback_prompt = f"""{agent_prompt}
+
+---
+
+## 当前任务
+你需要分析 GitHub Issue #{issue_number}：
+
+{task_context}
+
+---
+
+输出要求（严格）：
+- 以 [Agent: gqy20] 开头
+- 必须给出可追溯来源链接（sources）
+- 证据不足的内容必须明确标注“不确定/缺证据”
+"""
+        fallback_result = await run_single_agent(fallback_prompt, "gqy20")
+        fallback_text = str(fallback_result.get("response", ""))
+        fallback_urls = _collect_source_urls(fallback_text)
+        if fallback_urls:
+            judge_text = fallback_text
+            total_cost += float(fallback_result.get("cost_usd", 0.0))
+            total_turns += int(fallback_result.get("num_turns", 0))
+            total_input_tokens += int(fallback_result.get("input_tokens", 0))
+            total_output_tokens += int(fallback_result.get("output_tokens", 0))
+            total_tokens += int(fallback_result.get("total_tokens", 0))
+            stage_tools = fallback_result.get("tool_calls", [])
+            if isinstance(stage_tools, list):
+                tool_calls.extend(str(t) for t in stage_tools)
+
+    return {
+        "ok": True,
+        "error_type": None,
+        "error_message": None,
+        "response": judge_text,
+        "cost_usd": total_cost,
+        "num_turns": total_turns,
+        "tool_calls": _dedupe_tools(),
+        "input_tokens": total_input_tokens,
+        "output_tokens": total_output_tokens,
+        "total_tokens": total_tokens,
+        "stages": stages,
+    }
 
 
 async def run_agents_parallel(
@@ -371,6 +1138,7 @@ async def run_agents_parallel(
 - 请以 [Agent: {agent_name}] 为前缀发布你的回复
 - 专注于 Issue 的讨论话题和内容
 - 不要去分析项目代码或架构（除非 Issue 明确要求）
+- 仅输出 Markdown，禁止输出 YAML/JSON 代码块
 """
         if os.environ.get("PROMPT_LOG") == "1":
             max_len = 2000
@@ -378,7 +1146,11 @@ async def run_agents_parallel(
             suffix = "..." if len(final_prompt) > max_len else ""
             logger.debug(f"[{agent_name}] [Prompt] length={len(final_prompt)}\\n{preview}{suffix}")
 
-        result = await run_single_agent(final_prompt, agent_name)
+        if _is_gqy20_multistage_enabled(agent_name):
+            logger.info(f"[Issue#{issue_number}] {agent_name} 启用多阶段流程")
+            result = await _run_gqy20_multistage(agent_prompt, issue_number, task_context)
+        else:
+            result = await run_single_agent(final_prompt, agent_name)
         results[agent_name] = result
         total_cost_local = result.get("cost_usd", 0.0)
         logger.info(

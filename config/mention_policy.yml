@@ -7,7 +7,7 @@ mention_policy:
     # - spam-user
     # - bot-account
 
-  # 频率限制（暂未实现，预留配置）
+  # 频率限制（内存态实现，重启后计数重置）
   rate_limit:
     enabled: false
     max_per_issue: 10  # 每个 Issue 最多 @ 10 次

@@ -1,0 +1,18 @@
+name: "video_manim - Reproducible Video Builder"
+owner: video_manim
+agent_type: system
+description: "Generate reproducible manim scripts, render videos, audit quality, and publish traceable artifact links."
+
+enabled: true
+max_turns: 120
+max_budget_usd: 15.00
+timeout_seconds: 900
+
+enable_skills: true
+enable_subagents: true
+enable_mcp: true
+enable_system_mcp: false
+output_template: review_v1
+
+repository: "gqy20/IssueLab"
+branch: "main"

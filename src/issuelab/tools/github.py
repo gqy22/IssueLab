@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import subprocess
 import tempfile
 from typing import Literal
@@ -14,6 +15,18 @@ logger = get_logger(__name__)
 
 # GitHub 评论最大长度
 MAX_COMMENT_LENGTH = 10000
+_CONTROLLED_FOOTER_RE = re.compile(
+    r"(?:\n{1,3}(?:---\s*\n)?(?:\s*相关人员:\s*(?:@[a-zA-Z0-9_](?:[a-zA-Z0-9_-]*[a-zA-Z0-9_])?\s*)+"
+    r"|\s*协作请求:\s*(?:\n\s*-\s*@.*)+)\s*)\Z",
+    re.MULTILINE,
+)
+
+
+def _load_mentions_max_count() -> int:
+    """Load mentions cap from centralized response format rules."""
+    from issuelab.response_processor import get_mentions_max_count
+
+    return get_mentions_max_count(default=5)
 
 
 @retry_sync(max_retries=3, initial_delay=1.0, backoff_factor=2.0)
@@ -140,60 +153,51 @@ def post_comment(
 ) -> bool:
     """在 Issue 下发布评论（集中式 @ 管理）
 
-    新增功能：
+    功能：
     1. 支持拼接 @ 区域
-    2. 支持自动清理和过滤 @mentions（默认开启）
+    2. 支持自动过滤 @mentions（默认开启，不改写正文）
     3. 支持跨仓库评论
 
     Args:
         issue_number: Issue 编号
         body: 评论内容
         mentions: 需要 @ 的用户列表（会拼接到评论末尾）
-                 如果为 None 且 auto_clean=True，会自动提取并过滤
+                 如果为 None 且 auto_clean=True，会从结构化字段提取并过滤
         auto_truncate: 是否自动截断过长内容（默认 True）
-        auto_clean: 是否自动清理和过滤 @mentions（默认 True）
-                   设为 False 可完全禁用 @ 管理（绕过策略）
+        auto_clean: 是否自动过滤 @mentions（默认 True）
+                   设为 False 可禁用 @ 过滤（绕过策略）
         repo: 仓库名称（格式：owner/repo），None 表示当前仓库
 
     Returns:
         是否成功发布
     """
     env = Config.prepare_github_env()
-    from issuelab.response_processor import extract_mentions_from_yaml, normalize_comment_body
 
-    raw_body = body
-    body = normalize_comment_body(body, agent_name=agent_name)
+    # 保持正文原样，不做结构重写；仅做一次 mentions 解析与过滤。
+    if auto_clean:
+        from issuelab.mention_policy import filter_mentions
+        from issuelab.utils.mentions import extract_controlled_mentions
 
-    # 自动清理和过滤 @mentions（集中式管理的核心）
-    if mentions is None and auto_clean:
-        from issuelab.mention_policy import clean_mentions_in_text, filter_mentions
+        candidate_mentions = mentions
+        if candidate_mentions is None:
+            candidate_mentions = extract_controlled_mentions(body)
 
-        # 1. 只使用结构化 mentions 字段（避免从自由文本误判语义）
-        all_mentions = extract_mentions_from_yaml(raw_body)
-
-        # 2. 应用策略过滤
-        if all_mentions:
-            allowed_mentions, filtered_mentions = filter_mentions(all_mentions)
-
-            if filtered_mentions:
-                logger.info(f"[FILTER] 过滤了 {len(filtered_mentions)} 个 @mentions: {filtered_mentions}")
-
-            # 3. 清理主体内容（@ → "用户 xxx"）
-            body = clean_mentions_in_text(body)
-
-            # 4. 使用过滤后的 mentions（最多 2 个，按出现次数排序）
-            if len(allowed_mentions) > 2:
-                logger.info(f"[FILTER] 仅保留出现次数最多的 2 个 @mentions: {allowed_mentions[:2]}")
-            mentions = allowed_mentions[:2]
-        else:
-            mentions = []
+        allowed_mentions, filtered_mentions = filter_mentions(candidate_mentions or [], issue_number=issue_number)
+        mentions_max_count = _load_mentions_max_count()
+        if filtered_mentions:
+            logger.info(f"[FILTER] 过滤了 {len(filtered_mentions)} 个 @mentions: {filtered_mentions}")
+        if len(allowed_mentions) > mentions_max_count:
+            logger.info(f"[FILTER] 仅保留前 {mentions_max_count} 个 @mentions: {allowed_mentions[:mentions_max_count]}")
+        mentions = allowed_mentions[:mentions_max_count]
 
     # 拼接 @ 区域
     if mentions:
         from issuelab.mention_policy import build_mention_section
 
+        # 避免重复追加：如果正文尾部已有受控区，先移除再注入过滤后的单一受控区。
+        body_no_footer = _CONTROLLED_FOOTER_RE.sub("", body.rstrip())
         mention_section = build_mention_section(mentions, format_type="labeled")
-        final_body = f"{body}\n\n{mention_section}"
+        final_body = f"{body_no_footer}\n\n{mention_section}"
     else:
         final_body = body
 
@@ -223,7 +227,10 @@ def post_comment(
         logger.error(f"发布评论到 Issue #{issue_number} 失败: {result.stderr}")
         return False
 
-    logger.info(f"评论已发布到 Issue #{issue_number}")
+    if agent_name:
+        logger.info(f"[{agent_name}] 评论已发布到 Issue #{issue_number}")
+    else:
+        logger.info(f"评论已发布到 Issue #{issue_number}")
     return True
 
 

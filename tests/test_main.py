@@ -3,58 +3,6 @@
 import os
 from unittest.mock import patch
 
-from issuelab.tools.github import MAX_COMMENT_LENGTH, truncate_text
-
-
-class TestTruncateText:
-    """测试文本截断功能"""
-
-    def test_short_text_not_truncated(self):
-        """短文本不应被截断"""
-        text = "Short text"
-        result = truncate_text(text)
-        assert result == text
-        assert "已截断" not in result
-
-    def test_exact_limit_not_truncated(self):
-        """刚好达到限制不截断"""
-        text = "a" * MAX_COMMENT_LENGTH
-        result = truncate_text(text)
-        assert len(result) == MAX_COMMENT_LENGTH
-        assert "已截断" not in result
-
-    def test_long_text_truncated(self):
-        """超长文本被截断"""
-        text = "a" * (MAX_COMMENT_LENGTH + 1000)
-        result = truncate_text(text)
-        assert len(result) <= MAX_COMMENT_LENGTH
-        assert "已截断" in result
-
-    def test_truncate_at_paragraph(self):
-        """在段落边界截断"""
-        # 创建带多个段落的文本
-        paragraphs = ["段落" + str(i) + "\n\n" for i in range(100)]
-        text = "".join(paragraphs) * 100  # 确保超出限制
-
-        result = truncate_text(text, max_length=1000)
-        assert len(result) <= 1000
-        assert "已截断" in result
-
-    def test_custom_max_length(self):
-        """自定义最大长度"""
-        text = "a" * 1000
-        result = truncate_text(text, max_length=100)
-        assert len(result) <= 100
-        assert "已截断" in result
-
-    def test_truncate_preserves_encoding(self):
-        """截断保持中文编码"""
-        text = "中文测试" * 5000
-        result = truncate_text(text, max_length=1000)
-        assert len(result) <= 1000
-        # 验证结果仍然是有效的字符串
-        assert isinstance(result, str)
-
 
 class TestMainTriggerComment:
     """测试 trigger comment 环境变量处理"""
@@ -75,17 +23,101 @@ class TestMainTriggerComment:
                 captured["trigger_comment"] = trigger_comment
                 return {}
 
-            monkeypatch.setattr(main_mod, "run_agents_parallel", _fake_run)
+            monkeypatch.setattr("issuelab.commands.common.run_agents_parallel", _fake_run)
             monkeypatch.setattr(main_mod, "parse_agents_arg", lambda s: ["gqy20"])
 
             monkeypatch.setenv("PYTHONPATH", "src")
             monkeypatch.setattr(os, "environ", os.environ)
-            monkeypatch.setattr(main_mod, "post_comment", lambda *a, **k: True)
+            monkeypatch.setattr("issuelab.commands.common.post_comment", lambda *a, **k: True)
 
             with patch("sys.argv", ["issuelab", "execute", "--issue", "1", "--agents", "gqy20"]):
                 main_mod.main()
 
             assert captured.get("trigger_comment") == "@agent please focus on this"
+
+    def test_execute_post_uses_guardrail_comment_for_failed_result(self, monkeypatch):
+        """execute --post 遇到失败结果，默认不发布失败评论（避免刷屏）"""
+        from issuelab import __main__ as main_mod
+
+        monkeypatch.setattr(
+            main_mod, "get_issue_info", lambda *a, **k: {"title": "t", "body": "b", "comments": "", "comment_count": 0}
+        )
+        monkeypatch.setattr(main_mod, "parse_agents_arg", lambda s: ["gqy20"])
+
+        async def _fake_run(*args, **kwargs):
+            return {
+                "gqy20": {
+                    "ok": False,
+                    "error_type": "timeout",
+                    "error_message": "deadline exceeded",
+                    "failed_stage": "Researcher",
+                    "response": "[系统护栏] timeout",
+                    "cost_usd": 0.0,
+                    "num_turns": 0,
+                    "tool_calls": [],
+                }
+            }
+
+        posted = {"called": False}
+
+        def _fake_post(issue, body, agent_name=None, **kwargs):
+            posted["called"] = True
+            return True
+
+        monkeypatch.setattr("issuelab.commands.common.run_agents_parallel", _fake_run)
+        monkeypatch.setattr("issuelab.commands.common.post_comment", _fake_post)
+
+        with (
+            patch("issuelab.tools.github.write_issue_context_file", lambda *a, **k: "/tmp/issue_1.md"),
+            patch("sys.argv", ["issuelab", "execute", "--issue", "1", "--agents", "gqy20", "--post"]),
+        ):
+            main_mod.main()
+
+        assert posted["called"] is False
+
+    def test_execute_post_can_publish_failure_summary_when_enabled(self, monkeypatch):
+        """开启 ISSUELAB_POST_FAILURE_COMMENT 时应发布失败摘要"""
+        from issuelab import __main__ as main_mod
+
+        monkeypatch.setattr(
+            main_mod, "get_issue_info", lambda *a, **k: {"title": "t", "body": "b", "comments": "", "comment_count": 0}
+        )
+        monkeypatch.setattr(main_mod, "parse_agents_arg", lambda s: ["gqy20"])
+        monkeypatch.setenv("ISSUELAB_POST_FAILURE_COMMENT", "1")
+
+        async def _fake_run(*args, **kwargs):
+            return {
+                "gqy20": {
+                    "ok": False,
+                    "error_type": "timeout",
+                    "error_message": "deadline exceeded",
+                    "failed_stage": "Researcher",
+                    "response": "[系统护栏] timeout",
+                    "cost_usd": 0.0,
+                    "num_turns": 0,
+                    "tool_calls": [],
+                }
+            }
+
+        posted = {}
+
+        def _fake_post(issue, body, agent_name=None, **kwargs):
+            posted["body"] = body
+            posted["agent_name"] = agent_name
+            return True
+
+        monkeypatch.setattr("issuelab.commands.common.run_agents_parallel", _fake_run)
+        monkeypatch.setattr("issuelab.commands.common.post_comment", _fake_post)
+
+        with (
+            patch("issuelab.tools.github.write_issue_context_file", lambda *a, **k: "/tmp/issue_1.md"),
+            patch("sys.argv", ["issuelab", "execute", "--issue", "1", "--agents", "gqy20", "--post"]),
+        ):
+            main_mod.main()
+
+        assert posted["agent_name"] == "gqy20"
+        assert "[系统护栏]" in posted["body"]
+        assert "failed_stage: Researcher" in posted["body"]
 
 
 class TestObserveBatchUsesGetIssueInfo:
@@ -105,16 +137,13 @@ class TestObserveBatchUsesGetIssueInfo:
                 "comment_count": 1,
             }
 
-        async def fake_run_observer_batch(issue_data_list):
+        async def fake_run_observer_batch(issue_data_list, max_parallel=5):
             return []
 
-        monkeypatch.setattr(main_mod, "get_issue_info", fake_get_issue_info)
+        monkeypatch.setattr("issuelab.commands.observer.get_issue_info", fake_get_issue_info)
         from issuelab import tools as tools_pkg
 
         monkeypatch.setattr(tools_pkg.github, "write_issue_context_file", lambda *a, **k: f"/tmp/issue_{a[0]}.md")
-        monkeypatch.setattr(
-            main_mod.subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(AssertionError("subprocess.run called"))
-        )
         monkeypatch.setattr(
             __import__("issuelab.agents.observer").agents.observer,
             "run_observer_batch",

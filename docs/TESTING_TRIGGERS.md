@@ -7,7 +7,7 @@
 - [测试环境准备](#测试环境准备)
 - [@Mention 触发测试](#mention-触发测试)
 - [/Command 触发测试](#command-触发测试)
-- [Label 触发测试](#label-触发测试)
+- [Issue Label 触发测试](#issue-label-触发测试)
 - [Observer 自动触发测试](#observer-自动触发测试)
 - [Agent 发现机制测试](#agent-发现机制测试)
 - [CLI 命令测试](#cli-命令测试)
@@ -40,44 +40,38 @@ export ANTHROPIC_AUTH_TOKEN="your_anthropic_api_key"
 uv run pytest tests/ -v
 
 # 运行特定模块测试
-uv run pytest tests/test_parser.py -v          # @mention 解析测试
+uv run pytest tests/test_parser.py -v          # mention 解析测试
 uv run pytest tests/test_observer_trigger.py -v  # Observer 触发测试
 uv run pytest tests/test_cli.py -v              # CLI 命令测试
 ```
 
 ---
 
-## @Mention 触发测试
+## Mention 解析与受控区触发测试
 
 ### 测试范围
 
 | 模块 | 文件 | 说明 |
 |------|------|------|
-| 解析器 | `src/issuelab/parser.py` | 解析 @mention 真名 |
-| 测试 | `tests/test_parser.py` | @mention 解析测试 |
+| 解析器 | `src/issuelab/parser.py` | 解析 mention 真名 |
+| 测试 | `tests/test_parser.py` | mention 解析测试 |
 
 ### 测试用例
 
-#### 1. 测试内置 Agent 真名解析
+#### 1. 测试 system Agent 真名解析
 
 ```python
 # 测试文件: tests/test_parser.py
 
-def test_parse_single_mention():
-    """测试解析单个 @mention"""
-    result = parse_agent_mentions("@moderator 请审核")
-    assert result == ["moderator"]
+def test_parse_unknown_mention_filtered():
+    """未知 mention 应过滤"""
+    result = parse_agent_mentions("@mod @reva")
+    assert result == []
 
-def test_parse_multiple_mentions():
-    """测试解析多个 @mention"""
-    result = parse_agent_mentions("@moderator 审核，@reviewer_a 评审")
-    assert result == ["moderator", "reviewer_a"]
-
-def test_parse_name_mappings():
-    """测试真名映射"""
-    assert AGENT_NAMES["moderator"] == "moderator"
-    assert AGENT_NAMES["reviewer_a"] == "reviewer_a"
-    assert AGENT_NAMES["reviewer_b"] == "reviewer_b"
+def test_parse_mentions_with_digits_and_hyphen():
+    """支持带数字和连字符的 agent 名称"""
+    result = parse_agent_mentions("@gqy20 @agent-1")
+    assert result == ["gqy20", "agent-1"]
 ```
 
 #### 2. 运行解析器测试
@@ -89,7 +83,7 @@ uv run pytest tests/test_parser.py -v
 #### 3. 手动测试命令行
 
 ```bash
-# 解析 @mention
+# 解析 mention
 uv run python -c "
 from issuelab.parser import parse_agent_mentions
 
@@ -108,7 +102,7 @@ for t in tests:
 
 ### 真名触发
 
-系统仅支持内置 Agent 真名触发，例如：
+系统仅支持已注册 system Agent 真名触发，例如：
 - `@moderator`
 - `@reviewer_a`
 - `@reviewer_b`
@@ -164,13 +158,13 @@ uv run python -m issuelab execute --issue 1 --agents "moderator,reviewer_a" --po
 
 ---
 
-## Label 触发测试
+## Issue Label 触发测试（仅 state:ready-for-review）
 
 ### 测试范围
 
 | 模块 | 文件 | 说明 |
 |------|------|------|
-| 自动触发 | `src/issuelab/observer_trigger.py` | Label 触发逻辑 |
+| 自动触发 | `src/issuelab/observer_trigger.py` | system/user dispatch 触发逻辑 |
 | 测试 | `tests/test_observer_trigger.py` | Observer 触发测试 |
 
 ### 触发标签
@@ -178,40 +172,40 @@ uv run python -m issuelab execute --issue 1 --agents "moderator,reviewer_a" --po
 | 标签 | 触发条件 | 动作 |
 |------|---------|------|
 | `state:ready-for-review` | Issues 事件，action=labeled | 运行完整评审流程 |
-| `bot:trigger-{agent}` | Issues 事件，action=labeled | 执行指定 agent |
 
 ### 测试用例
 
-#### 1. 测试内置 Agent 识别
+#### 1. 测试 system Agent 识别
 
 ```python
 # tests/test_observer_trigger.py
 
-def test_moderator_is_builtin():
-    """Moderator 应该被识别为内置 agent"""
-    from issuelab.observer_trigger import is_builtin_agent
-    assert is_builtin_agent("moderator") is True
+def test_moderator_is_system():
+    """Moderator 应该被识别为 system agent"""
+    from issuelab.observer_trigger import is_system_agent
+    assert is_system_agent("moderator") is True
 
-def test_user_agent_is_not_builtin():
-    """用户 agent 不应该被识别为内置 agent"""
-    from issuelab.observer_trigger import is_builtin_agent
-    assert is_builtin_agent("gqy22") is False
+def test_user_agent_is_not_system():
+    """用户 agent 不应该被识别为 system agent"""
+    from issuelab.observer_trigger import is_system_agent
+    assert is_system_agent("gqy22") is False
 ```
 
-#### 2. 测试 Label 触发
+#### 2. 测试 system workflow dispatch 触发
 
 ```python
 @patch("subprocess.run")
-def test_trigger_builtin_agent_adds_label(mock_run):
-    """触发内置 agent 应该添加 label"""
-    from issuelab.observer_trigger import trigger_builtin_agent
+def test_trigger_system_agent_dispatch(mock_run):
+    """触发 system agent 应通过 workflow dispatch"""
+    from issuelab.observer_trigger import trigger_system_agent
 
     mock_run.return_value = Mock(returncode=0)
-    trigger_builtin_agent("moderator", 42)
+    trigger_system_agent("moderator", 42)
 
     mock_run.assert_called_once()
     call_args = mock_run.call_args[0][0]
-    assert "bot:trigger-moderator" in call_args
+    assert "workflow" in call_args
+    assert "agent.yml" in call_args
 ```
 
 #### 3. 运行 Observer 触发测试
@@ -220,15 +214,9 @@ def test_trigger_builtin_agent_adds_label(mock_run):
 uv run pytest tests/test_observer_trigger.py -v
 ```
 
-### 手动测试 Label 触发
+### 手动测试 Issue Label 触发
 
 ```bash
-# 模拟添加触发标签
-gh issue edit 1 --add-label "bot:trigger-moderator"
-
-# 查看当前标签
-gh issue view 1 --json labels
-
 # 测试 ready-for-review 标签
 gh issue edit 1 --add-label "state:ready-for-review"
 ```
@@ -261,20 +249,20 @@ uv run python -m issuelab observe-batch --issues "1,2,3" --auto-trigger
 ```python
 # tests/test_observer_trigger.py
 
-@patch("issuelab.observer_trigger.trigger_builtin_agent")
-@patch("issuelab.observer_trigger.is_builtin_agent")
-def test_auto_trigger_builtin_agent(mock_is_builtin, mock_trigger_builtin):
-    """Observer 判断需要触发内置 agent 时应该添加 label"""
+@patch("issuelab.observer_trigger.trigger_system_agent")
+@patch("issuelab.observer_trigger.is_system_agent")
+def test_auto_trigger_system_agent(mock_is_system, mock_trigger_system):
+    """Observer 判断需要触发 system agent 时应该发起 workflow dispatch"""
     from issuelab.observer_trigger import auto_trigger_agent
 
-    mock_is_builtin.return_value = True
-    mock_trigger_builtin.return_value = True
+    mock_is_system.return_value = True
+    mock_trigger_system.return_value = True
 
     result = auto_trigger_agent(
         agent_name="moderator", issue_number=1, issue_title="Test", issue_body="Body"
     )
 
-    mock_trigger_builtin.assert_called_once_with("moderator", 1)
+    mock_trigger_system.assert_called_once_with("moderator", 1)
     assert result is True
 ```
 
@@ -326,7 +314,7 @@ def test_discover_agents():
 
     agents = discover_agents()
 
-    # 验证内置 agent 存在
+    # 验证 system agent 存在
     assert "moderator" in agents
     assert "reviewer_a" in agents
     assert "reviewer_b" in agents
@@ -392,25 +380,15 @@ uv run python -m issuelab list-agents
 #### 1. 测试 agents 参数解析
 
 ```python
-# tests/test_main.py
+# tests/test_cli.py
 
-def test_parse_agents_comma():
-    """测试逗号分隔格式"""
+def test_parse_agents_arg_variants():
+    """测试 CSV/空格/JSON 等多种 agents 输入格式"""
     from issuelab.__main__ import parse_agents_arg
 
-    assert parse_agents_arg("echo,test") == ["echo", "test"]
-
-def test_parse_agents_space():
-    """测试空格分隔格式"""
-    from issuelab.__main__ import parse_agents_arg
-
-    assert parse_agents_arg("echo test") == ["echo", "test"]
-
-def test_parse_agents_json():
-    """测试 JSON 数组格式"""
-    from issuelab.__main__ import parse_agents_arg
-
-    assert parse_agents_arg('["echo", "test"]') == ["echo", "test"]
+    assert parse_agents_arg("moderator,reviewer_a") == ["moderator", "reviewer_a"]
+    assert parse_agents_arg("moderator reviewer_a") == ["moderator", "reviewer_a"]
+    assert parse_agents_arg('["moderator", "reviewer_a"]') == ["moderator", "reviewer_a"]
 ```
 
 #### 2. 运行 CLI 测试
@@ -462,19 +440,17 @@ uv run python -m issuelab review --issue 1 --post
 # tests/test_response_processor.py
 
 def test_process_agent_response_mentions():
-    """测试处理响应中的结构化 mentions"""
+    """测试处理响应中的受控区 mentions"""
     from issuelab.response_processor import process_agent_response
 
     result = process_agent_response(
         agent_name="moderator",
-        response="""```yaml
-summary: "Test"
-findings: []
-recommendations: []
-mentions:
-  - reviewer_a
-confidence: "high"
-```""",
+        response=\"\"\"## Summary
+Test
+
+---
+相关人员: @reviewer_a
+\"\"\",
         issue_number=1,
         issue_title="Test",
         issue_body="Body",
@@ -493,15 +469,15 @@ confidence: "high"
 | 工作流 | 触发条件 | 测试方法 |
 |--------|---------|---------|
 | `orchestrator.yml` | Issue 评论/标签事件 | 手动触发 Issue 事件 |
-| `dispatch_agents.yml` | 用户 @mention | 手动 @mention 用户 |
+| `dispatch_agents.yml` | Issue 正文包含受控区（`相关人员:` / `协作请求:`） | 手动编辑 Issue 正文并加入受控区 |
 
 ### 测试步骤
 
 #### 1. 测试 @Mention 触发
 
 ```bash
-# 在 Issue 下评论触发
-gh issue comment 1 --body "@moderator 请审核"
+# 在 Issue 下评论触发（受控区）
+gh issue comment 1 --body $'---\n相关人员: @moderator'
 
 # 查看 Actions 运行
 gh run list --workflow=orchestrator.yml
@@ -517,7 +493,7 @@ gh issue comment 1 --body "/review"
 gh run list --workflow=orchestrator.yml
 ```
 
-#### 3. 测试 Label 触发
+#### 3. 测试 Issue Label 触发（state:ready-for-review）
 
 ```bash
 # 添加触发标签
@@ -553,7 +529,7 @@ gh run view <run_id> --log
 
 ```bash
 # 使用 quick 场景
-uv run python -m issuelab execute --issue 1 --agents "echo" --scene quick
+uv run python -m issuelab execute --issue 1 --agents "moderator"
 ```
 
 ---
@@ -595,5 +571,5 @@ uv run pytest tests/test_agents.py -v
 
 - [CLAUDE.md](../CLAUDE.md) - 项目架构说明
 - [orchestrator.yml](../.github/workflows/orchestrator.yml) - GitHub Actions 工作流
-- [Agent Modules](src/issuelab/agents/) - Agent 执行引擎模块化架构
-- [Parser](src/issuelab/parser.py) - @mention 解析器
+- [Agent Modules](../src/issuelab/agents/) - Agent 执行引擎模块化架构
+- [Parser](../src/issuelab/parser.py) - mention 解析器

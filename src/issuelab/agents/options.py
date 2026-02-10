@@ -17,7 +17,7 @@ from claude_agent_sdk import AgentDefinition, ClaudeAgentOptions
 
 from issuelab.agents.config import AgentConfig
 from issuelab.agents.discovery import AGENTS_DIR, discover_agents
-from issuelab.agents.registry import get_agent_config
+from issuelab.agents.registry import get_agent_config, is_system_agent
 from issuelab.config import Config
 from issuelab.logging_config import get_logger
 
@@ -25,6 +25,51 @@ logger = get_logger(__name__)
 
 # 全局缓存：存储 Agent 选项
 _cached_agent_options: dict[tuple, ClaudeAgentOptions] = {}
+
+
+_TOOL_AND_CITATION_RULES = (
+    "Verification policy (mandatory): "
+    "Use available tools proactively and as much as needed to validate key claims before answering. "
+    "For high-impact conclusions, cross-check with multiple sources when possible. "
+    "Do not present uncertain claims as facts; explicitly mark uncertainty and what is missing. "
+    "Output must include traceable source links (URLs) for factual statements so readers can verify them."
+)
+
+# 系统智能体默认运行上限（当未在 agents/<name>/agent.yml 显式配置时生效）
+_SYSTEM_DEFAULT_OVERRIDES: dict[str, float | int] = {
+    "max_turns": 100,
+    "timeout_seconds": 600,
+}
+
+
+def _env_flag(name: str, default: bool) -> bool:
+    """Parse boolean environment flag."""
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _default_feature_flags(agent_name: str | None) -> dict[str, bool]:
+    """Resolve default feature flags from environment.
+
+    Defaults:
+    - system agents: disabled
+    - personal agents: enabled
+
+    Set ISSUELAB_ENABLE_DEFAULT_FEATURES=1 to enable globally.
+    You can also override per capability with:
+    - ISSUELAB_DEFAULT_ENABLE_SKILLS
+    - ISSUELAB_DEFAULT_ENABLE_SUBAGENTS
+    - ISSUELAB_DEFAULT_ENABLE_MCP
+    """
+    is_system = bool(agent_name and is_system_agent(agent_name, agents_dir=AGENTS_DIR)[0])
+    global_default = _env_flag("ISSUELAB_ENABLE_DEFAULT_FEATURES", not is_system)
+    return {
+        "enable_skills": _env_flag("ISSUELAB_DEFAULT_ENABLE_SKILLS", global_default),
+        "enable_subagents": _env_flag("ISSUELAB_DEFAULT_ENABLE_SUBAGENTS", global_default),
+        "enable_mcp": _env_flag("ISSUELAB_DEFAULT_ENABLE_MCP", global_default),
+    }
 
 
 def clear_agent_options_cache() -> None:
@@ -44,6 +89,8 @@ def _get_agent_run_overrides(agent_name: str | None) -> dict[str, float | int]:
 
     config = get_agent_config(agent_name, agents_dir=AGENTS_DIR, include_disabled=False)
     if not config:
+        if is_system_agent(agent_name, agents_dir=AGENTS_DIR)[0]:
+            return dict(_SYSTEM_DEFAULT_OVERRIDES)
         return {}
 
     overrides: dict[str, float | int] = {}
@@ -60,12 +107,8 @@ def _get_agent_run_overrides(agent_name: str | None) -> dict[str, float | int]:
 
 
 def _get_agent_feature_flags(agent_name: str | None) -> dict[str, bool]:
-    """读取 agent.yml 中的功能开关（默认启用）"""
-    flags = {
-        "enable_skills": True,
-        "enable_subagents": True,
-        "enable_mcp": True,
-    }
+    """读取 agent.yml 中的功能开关（默认取环境配置）"""
+    flags = _default_feature_flags(agent_name)
     if not agent_name:
         return flags
 
@@ -78,6 +121,20 @@ def _get_agent_feature_flags(agent_name: str | None) -> dict[str, bool]:
             flags[key] = bool(config.get(key))
 
     return flags
+
+
+def _get_enable_system_mcp(agent_name: str | None) -> bool:
+    """Whether to load project-level system MCP config for this agent."""
+    default = _env_flag("ISSUELAB_ENABLE_SYSTEM_MCP", False)
+    if not agent_name:
+        return default
+
+    config = get_agent_config(agent_name, agents_dir=AGENTS_DIR, include_disabled=False)
+    if not config:
+        return default
+    if "enable_system_mcp" in config:
+        return bool(config.get("enable_system_mcp"))
+    return default
 
 
 def _read_mcp_servers_from_file(path: Path) -> dict[str, Any]:
@@ -112,6 +169,48 @@ def _read_mcp_servers_from_file(path: Path) -> dict[str, Any]:
     return servers
 
 
+def _resolve_mcp_server_env(servers: dict[str, Any]) -> dict[str, Any]:
+    """解析 MCP server env 中的环境变量别名。
+
+    规则（按顺序）：
+    1. 若值形如 "${ENV_NAME}"，替换为 os.environ["ENV_NAME"]（存在时）。
+    2. 若值本身就是某个环境变量名（例如 "ANTHROPIC_AUTH_TOKEN"），替换为其值（存在时）。
+    3. 其他值保持不变。
+    """
+    resolved = dict(servers)
+    for server_name, cfg in list(resolved.items()):
+        if not isinstance(cfg, dict):
+            continue
+        env_cfg = cfg.get("env")
+        if not isinstance(env_cfg, dict):
+            continue
+
+        new_env: dict[str, Any] = {}
+        for key, raw_value in env_cfg.items():
+            if not isinstance(raw_value, str):
+                new_env[key] = raw_value
+                continue
+
+            value = raw_value.strip()
+            match = re.fullmatch(r"\$\{([A-Z0-9_]+)\}", value)
+            if match:
+                env_name = match.group(1)
+                new_env[key] = os.environ.get(env_name, raw_value)
+                continue
+
+            if re.fullmatch(r"[A-Z0-9_]+", value) and value in os.environ:
+                new_env[key] = os.environ[value]
+                continue
+
+            new_env[key] = raw_value
+
+        cfg_copy = dict(cfg)
+        cfg_copy["env"] = new_env
+        resolved[server_name] = cfg_copy
+
+    return resolved
+
+
 def _read_text_with_timeout(path: Path) -> str:
     """读取文件内容（带超时）"""
     timeout_ms = int(os.environ.get("MCP_CONFIG_LOAD_TIMEOUT_MS", "3000"))
@@ -131,24 +230,34 @@ def _read_text_with_timeout(path: Path) -> str:
             raise TimeoutError(f"read timeout after {timeout_ms}ms") from exc
 
 
-def load_mcp_servers_for_agent(agent_name: str | None, root_dir: Path | None = None) -> dict[str, Any]:
+def load_mcp_servers_for_agent(
+    agent_name: str | None, root_dir: Path | None = None, *, include_system: bool | None = None
+) -> dict[str, Any]:
     """加载 MCP 服务器配置（全局 + per-agent 覆盖）"""
     root = root_dir or AGENTS_DIR.parent
     servers: dict[str, Any] = {}
 
-    # 全局配置：项目根目录 .mcp.json
-    servers.update(_read_mcp_servers_from_file(root / ".mcp.json"))
+    if include_system is None:
+        include_system = _env_flag("ISSUELAB_ENABLE_SYSTEM_MCP", False)
+
+    # 全局配置：项目根目录 .mcp.json（系统级，可按开关关闭）
+    if include_system:
+        servers.update(_read_mcp_servers_from_file(root / ".mcp.json"))
 
     # Agent 级别配置：agents/<name>/.mcp.json
     if agent_name:
         servers.update(_read_mcp_servers_from_file(root / "agents" / agent_name / ".mcp.json"))
 
-    return servers
+    return _resolve_mcp_server_env(servers)
 
 
 def format_mcp_servers_for_prompt(agent_name: str | None, root_dir: Path | None = None) -> str:
     """为 prompt 格式化 MCP 服务器列表"""
-    servers = load_mcp_servers_for_agent(agent_name, root_dir=root_dir)
+    flags = _get_agent_feature_flags(agent_name)
+    if not flags["enable_mcp"]:
+        return "（未配置 MCP 工具）"
+    include_system = _get_enable_system_mcp(agent_name)
+    servers = load_mcp_servers_for_agent(agent_name, root_dir=root_dir, include_system=include_system)
     if not servers:
         return "（未配置 MCP 工具）"
     lines = []
@@ -359,6 +468,7 @@ def _create_agent_options_impl(
     mcp_servers: dict[str, Any],
     cwd: Path,
     subagents_sig: str,
+    enable_skills: bool,
     enable_subagents: bool,
 ) -> ClaudeAgentOptions:
     """创建 Agent 选项的实际实现（无缓存）"""
@@ -379,8 +489,10 @@ def _create_agent_options_impl(
 
     agents = discover_agents()
 
-    base_tools = ["Read", "Write", "Bash", "Skill"]
-    main_tools = base_tools + ["Task"]
+    base_tools = ["Read", "Write", "Bash"]
+    if enable_skills:
+        base_tools.append("Skill")
+    main_tools = base_tools + (["Task"] if enable_subagents else [])
     agent_definitions = {}
     for name, config in agents.items():
         if name == "observer":
@@ -424,12 +536,13 @@ def _create_agent_options_impl(
         output_format_rules = "Follow response format rules in config/papers_recommendation_format.yml."
     else:
         output_format_rules = "Follow response format rules in config/response_format.yml."
+    system_prompt_append = f"{output_format_rules} {_TOOL_AND_CITATION_RULES}"
 
     return ClaudeAgentOptions(
         agents=agent_definitions,
         max_turns=max_turns if max_turns is not None else AgentConfig().max_turns,
         max_budget_usd=max_budget_usd if max_budget_usd is not None else AgentConfig().max_budget_usd,
-        system_prompt={"type": "preset", "preset": "claude_code", "append": output_format_rules},
+        system_prompt={"type": "preset", "preset": "claude_code", "append": system_prompt_append},
         setting_sources=["user", "project"],
         env=env,
         permission_mode="bypassPermissions",
@@ -476,7 +589,10 @@ def create_agent_options(
     )
 
     # 缓存键：使用参数元组
-    mcp_servers = load_mcp_servers_for_agent(agent_name) if feature_flags["enable_mcp"] else {}
+    include_system_mcp = _get_enable_system_mcp(agent_name)
+    mcp_servers = (
+        load_mcp_servers_for_agent(agent_name, include_system=include_system_mcp) if feature_flags["enable_mcp"] else {}
+    )
     if mcp_servers:
         server_names = ", ".join(sorted(mcp_servers.keys()))
         logger.info("MCP servers loaded for agent '%s': %s", agent_name or "default", server_names)
@@ -542,6 +658,7 @@ def create_agent_options(
         mcp_servers=mcp_servers,
         cwd=cwd,
         subagents_sig=subagents_sig,
+        enable_skills=feature_flags["enable_skills"],
         enable_subagents=feature_flags["enable_subagents"],
     )
 

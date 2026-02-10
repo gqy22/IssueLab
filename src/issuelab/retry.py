@@ -23,6 +23,7 @@ async def retry_async(
     max_retries: int = 3,
     initial_delay: float = 1.0,
     backoff_factor: float = 2.0,
+    should_retry: Callable[[Exception], bool] | None = None,
     **kwargs: Any,
 ) -> Any:
     """异步函数重试装饰器
@@ -48,6 +49,9 @@ async def retry_async(
             return await func(*args, **kwargs)
         except Exception as e:
             last_exception = e
+            if should_retry is not None and not should_retry(e):
+                logger.warning("遇到不可重试异常，立即失败: %s: %s", type(e).__name__, e)
+                raise
 
             if attempt < max_retries:
                 logger.warning(
@@ -61,7 +65,12 @@ async def retry_async(
     raise RetryError(f"重试 {max_retries + 1} 次后仍然失败") from last_exception
 
 
-def retry_sync(max_retries: int = 3, initial_delay: float = 1.0, backoff_factor: float = 2.0):
+def retry_sync(
+    max_retries: int = 3,
+    initial_delay: float = 1.0,
+    backoff_factor: float = 2.0,
+    should_retry: Callable[[Exception], bool] | None = None,
+):
     """同步函数重试装饰器
 
     Args:
@@ -86,6 +95,9 @@ def retry_sync(max_retries: int = 3, initial_delay: float = 1.0, backoff_factor:
                     return func(*args, **kwargs)
                 except Exception as e:
                     last_exception = e
+                    if should_retry is not None and not should_retry(e):
+                        logger.warning("遇到不可重试异常，立即失败: %s: %s", type(e).__name__, e)
+                        raise
 
                     if attempt < max_retries:
                         logger.warning(

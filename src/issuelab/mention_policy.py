@@ -5,15 +5,22 @@
 
 import logging
 import re
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from issuelab.agents.registry import BUILTIN_AGENTS, load_registry
+from issuelab.agents.registry import load_registry
 
 logger = logging.getLogger(__name__)
 
 # 统一的 @mention 匹配规则（支持字母、数字、下划线、连字符）
 MENTION_PATTERN = re.compile(r"@([a-zA-Z0-9_-]+)")
+
+# In-memory rate-limit state.
+_RATE_LIMIT_STATE: dict[str, Any] = {
+    "issue_counts": {},  # key=(username_lower, issue_number) -> count
+    "hourly_events": {},  # key=username_lower -> list[datetime]
+}
 
 
 def load_mention_policy() -> dict[str, Any]:
@@ -82,7 +89,9 @@ def load_mention_policy() -> dict[str, Any]:
         return default_policy
 
 
-def filter_mentions(mentions: list[str], policy: dict[str, Any] | None = None) -> tuple[list[str], list[str]]:
+def filter_mentions(
+    mentions: list[str], policy: dict[str, Any] | None = None, issue_number: int | None = None
+) -> tuple[list[str], list[str]]:
     """应用策略过滤 @mentions
 
     Args:
@@ -107,12 +116,12 @@ def filter_mentions(mentions: list[str], policy: dict[str, Any] | None = None) -
     filtered = []
 
     registry = load_registry(Path("agents"))
-    allowed_agents = {name.lower() for name in BUILTIN_AGENTS} | {name.lower() for name in registry}
+    allowed_agents = {name.lower() for name in registry}
 
     for username in mentions:
         username_lower = username.lower()
 
-        # 0. 必须是已注册或内置的 agent
+        # 0. 必须是已注册 agent
         if username_lower not in allowed_agents:
             logger.debug(f"[FILTER] 未注册 agent: {username}")
             filtered.append(username)
@@ -123,13 +132,27 @@ def filter_mentions(mentions: list[str], policy: dict[str, Any] | None = None) -
             logger.debug(f"[FILTER] 黑名单: {username}")
             filtered.append(username)
             continue
+
+        # 2. 频率限制（可选）
+        if issue_number is not None and not check_rate_limit(
+            username, issue_number, rate_limit_policy=policy.get("rate_limit", {})
+        ):
+            logger.debug(f"[FILTER] rate limit: {username}")
+            filtered.append(username)
+            continue
+
         allowed.append(username)
 
     logger.info(f"[FILTER] 结果: allowed={allowed}, filtered={filtered}")
     return allowed, filtered
 
 
-def check_rate_limit(username: str, issue_number: int) -> bool:
+def check_rate_limit(
+    username: str,
+    issue_number: int,
+    rate_limit_policy: dict[str, Any] | None = None,
+    now: datetime | None = None,
+) -> bool:
     """检查用户是否超过频率限制
 
     注意：此功能暂未实现，预留接口
@@ -141,8 +164,32 @@ def check_rate_limit(username: str, issue_number: int) -> bool:
     Returns:
         是否允许触发（True=允许）
     """
-    # TODO: 实现频率限制逻辑
-    # 需要持久化存储（如 Redis 或本地文件）
+    policy = rate_limit_policy or load_mention_policy().get("rate_limit", {})
+    if not bool(policy.get("enabled", False)):
+        return True
+
+    username_lower = username.lower()
+    current_time = now or datetime.now(UTC)
+    max_per_issue = int(policy.get("max_per_issue", 10))
+    max_per_hour = int(policy.get("max_per_hour", 5))
+
+    issue_key = (username_lower, int(issue_number))
+    issue_counts: dict[tuple[str, int], int] = _RATE_LIMIT_STATE.setdefault("issue_counts", {})
+    count_on_issue = issue_counts.get(issue_key, 0)
+    if count_on_issue >= max_per_issue:
+        return False
+
+    hourly_events: dict[str, list[datetime]] = _RATE_LIMIT_STATE.setdefault("hourly_events", {})
+    user_events = hourly_events.get(username_lower, [])
+    window_start = current_time - timedelta(hours=1)
+    user_events = [t for t in user_events if t >= window_start]
+    if len(user_events) >= max_per_hour:
+        hourly_events[username_lower] = user_events
+        return False
+
+    issue_counts[issue_key] = count_on_issue + 1
+    user_events.append(current_time)
+    hourly_events[username_lower] = user_events
     return True
 
 

@@ -2,6 +2,11 @@
 
 > 面向 fork 用户的最短上手路径（5 步完成可用）
 
+## 快速演示视频
+
+- 部署演示：`http://qny.gqy20.top/videos/deploy.mp4`
+- 使用演示：`http://qny.gqy20.top/videos/use.mp4`
+
 ## 1. 五步启动
 
 1. **Fork 项目**
@@ -62,6 +67,12 @@ repository: your_username/IssueLab
 enabled: true
 max_turns: 30
 max_budget_usd: 10.0
+
+# 建议显式声明能力开关
+enable_skills: true
+enable_subagents: true
+enable_mcp: true
+enable_system_mcp: false
 ```
 
 ---
@@ -71,7 +82,8 @@ max_budget_usd: 10.0
 1. 确认你的 PR 已合并到主仓库
 2. 在主仓库任意 Issue 评论：
    ```
-   @your_username 请帮我分析这个问题
+   协作请求:
+   - @your_username
    ```
 3. 进入你的 fork 仓库 → **Actions**
 4. 看到 `Run Agent on Workflow Dispatch` 成功运行

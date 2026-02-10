@@ -14,7 +14,7 @@ on:
       days:
         description: '追溯天数'
         required: false
-        default: '1'
+        default: '7'
         type: string
       max_papers:
         description: '最大文献数（分析前）'
@@ -32,7 +32,7 @@ permissions:
 
 env:
   QUERY: ${{ github.event.inputs.query || '"Speciation"[Mesh] OR "Hybridization, Genetic"[Mesh] OR "Genetic Introgression"[Mesh] OR "Reproductive Isolation"[Mesh] OR "Gene Flow"[Mesh] OR (speciation[Title/Abstract] AND species[Title/Abstract]) OR ("lineage sorting"[Title/Abstract]) OR ("adaptive radiation"[Title/Abstract]) OR ("incipient species"[Title/Abstract])' }}
-  DAYS: ${{ github.event.inputs.days || '1' }}
+  DAYS: ${{ github.event.inputs.days || '7' }}
   MAX_PAPERS: ${{ github.event.inputs.max_papers || '20' }}
   GH_TOKEN: ${{ secrets.PAT_TOKEN }}
   LOG_LEVEL: DEBUG
@@ -59,6 +59,8 @@ jobs:
 
       - name: Run PubMed Monitor
         run: |
+          set -euo pipefail
+          mkdir -p artifacts/observability
           echo "🔍 扫描 PubMed 新文献..."
           echo "📊 检索词: ${{ env.QUERY }}"
           echo "📅 追溯天数: ${{ env.DAYS }}"
@@ -70,4 +72,98 @@ jobs:
             --query '${{ env.QUERY }}' \
             --days ${{ env.DAYS }} \
             --max-papers ${{ env.MAX_PAPERS }} \
-            --email "${{ env.PUBMED_EMAIL }}"
+            --email "${{ env.PUBMED_EMAIL }}" \
+            --output artifacts/pubmed_candidates.json \
+            --metrics-output artifacts/observability/pubmed_metrics.json \
+            2>&1 | tee artifacts/observability/pubmed_monitor.log
+
+      - name: Emit observability summary
+        if: always()
+        env:
+          WF_NAME: ${{ github.workflow }}
+          JOB_NAME: monitor
+          RUN_ID: ${{ github.run_id }}
+          REPO_NAME: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/observability
+
+          python - << 'PY'
+          import json
+          import os
+          from datetime import UTC, datetime
+          from pathlib import Path
+
+          metrics_path = Path("artifacts/observability/pubmed_metrics.json")
+          m = {}
+          if metrics_path.exists():
+            try:
+              m = json.loads(metrics_path.read_text(encoding="utf-8"))
+            except Exception:
+              m = {}
+
+          input_count = int(m.get("fetched_count", 0) or 0)
+          success_count = int(m.get("created_issues", 0) or 0)
+          failed_count = 0
+          skipped_count = 0
+          status_raw = str(m.get("status", ""))
+          failures = []
+          if status_raw in {"no_recommendation", "insufficient_candidates", "no_new_after_dedupe", "no_new_papers"}:
+            skipped_count = 1
+          if status_raw == "started":
+            failures.append({"code": "METRICS_MISSING", "count": 1, "samples": []})
+
+          status = "success"
+          if failures:
+            status = "partial"
+          elif skipped_count > 0 and success_count == 0:
+            status = "skipped"
+
+          payload = {
+            "schema_version": "v1",
+            "workflow": os.getenv("WF_NAME"),
+            "job": os.getenv("JOB_NAME"),
+            "run_id": os.getenv("RUN_ID"),
+            "repo": os.getenv("REPO_NAME"),
+            "sha": os.getenv("SHA"),
+            "finished_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "metrics": {
+              "input_count": input_count,
+              "success_count": success_count,
+              "failed_count": failed_count,
+              "skipped_count": skipped_count,
+              "new_papers_count": int(m.get("new_papers_count", 0) or 0),
+              "recommended_count": int(m.get("recommended_count", 0) or 0),
+              "created_issues": int(m.get("created_issues", 0) or 0),
+            },
+            "failures_topn": failures[:5],
+            "status": status,
+          }
+
+          Path("artifacts/observability/pubmed_monitor__monitor.json").write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+          )
+
+          summary = [
+            "## Observability (pubmed monitor)",
+            "",
+            "| metric | value |",
+            "|---|---:|",
+            f"| input_count | {payload['metrics']['input_count']} |",
+            f"| new_papers_count | {payload['metrics']['new_papers_count']} |",
+            f"| recommended_count | {payload['metrics']['recommended_count']} |",
+            f"| created_issues | {payload['metrics']['created_issues']} |",
+            f"| status | {payload['status']} |",
+          ]
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
+            fh.write("\n".join(summary) + "\n")
+          PY
+
+      - name: Upload observability artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pubmed-monitor-observability-${{ github.run_id }}
+          path: artifacts/observability/
+          retention-days: 14

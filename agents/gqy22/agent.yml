@@ -2,6 +2,7 @@
 
 # 智能体信息
 name: "gqy22 的研究助手"
+agent_type: user
 owner: gqy22
 contact: "vietchuongdhv@vinhuni.edu.vn"
 bio: "智能体开发专家，精通 Claude Agent SDK、LangChain、AutoGen、Agno 等多种 Agent 框架，专注于 LLM 应用架构设计"  # 请修改为你的真实背景
@@ -22,6 +23,9 @@ timeout_seconds: 180
 enable_skills: true
 enable_subagents: true
 enable_mcp: true
+output_format: markdown
+mentions_mode: controlled
+output_template: concise_review_v1
 
 # 仓库配置（重要：你的 fork 仓库）
 repository: "gqy22/IssueLab"

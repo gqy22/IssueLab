@@ -1,7 +1,7 @@
 name: Run Built-in Agent
 
 description: |
-  运行 IssueLab 内置 Agent（moderator, reviewer_a, reviewer_b, summarizer, echo）
+  运行 IssueLab 系统 Agent（由 agents/*/agent.yml 配置驱动）
   包含环境变量配置。
 
 inputs:

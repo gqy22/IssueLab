@@ -3,6 +3,7 @@
 import json
 import os
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -35,6 +36,7 @@ def test_create_agent_options_has_agents():
     assert "reviewer_a" in options.agents
     assert "reviewer_b" in options.agents
     assert "summarizer" in options.agents
+    assert "video_manim" in options.agents
     # observer 不在此列表中（单独处理）
     assert "observer" not in options.agents
 
@@ -155,7 +157,7 @@ class TestMcpConfigLoading:
         agent_dir.mkdir(parents=True)
         (agent_dir / ".mcp.json").write_text(json.dumps(agent_mcp), encoding="utf-8")
 
-        servers = load_mcp_servers_for_agent("alice", root_dir=tmp_path)
+        servers = load_mcp_servers_for_agent("alice", root_dir=tmp_path, include_system=True)
         assert servers["global"]["url"] == "https://global.example.com"
         assert servers["agent"]["url"] == "https://agent.example.com"
         assert servers["shared"]["url"] == "https://agent.example.com"
@@ -163,7 +165,11 @@ class TestMcpConfigLoading:
     def test_create_agent_options_includes_mcp_allowed_tools(self):
         """当存在 MCP servers 时，应包含 mcp__<server>__* 授权"""
         clear_agent_options_cache()
-        with patch("issuelab.agents.options.load_mcp_servers_for_agent") as mock_load:
+        with (
+            patch.dict(os.environ, {"ISSUELAB_ENABLE_DEFAULT_FEATURES": "1"}),
+            patch("issuelab.agents.options.get_agent_config", return_value=None),
+            patch("issuelab.agents.options.load_mcp_servers_for_agent") as mock_load,
+        ):
             mock_load.return_value = {"docs": {"type": "http", "url": "https://docs.example.com"}}
             options = create_agent_options(agent_name="moderator")
             assert "mcp__docs__*" in options.allowed_tools
@@ -176,7 +182,8 @@ class TestMcpConfigLoading:
         root_mcp = {"mcpServers": {"alpha": {"type": "http", "url": "https://a.example.com"}}}
         (tmp_path / ".mcp.json").write_text(json.dumps(root_mcp), encoding="utf-8")
 
-        text = format_mcp_servers_for_prompt("any", root_dir=tmp_path)
+        with patch.dict(os.environ, {"ISSUELAB_ENABLE_SYSTEM_MCP": "1", "ISSUELAB_ENABLE_DEFAULT_FEATURES": "1"}):
+            text = format_mcp_servers_for_prompt("any", root_dir=tmp_path)
         assert "- alpha [http]" in text
 
     def test_mcp_load_timeout_returns_empty(self):
@@ -186,14 +193,42 @@ class TestMcpConfigLoading:
         (tmp_root / ".mcp.json").write_text("{}", encoding="utf-8")
         with patch("issuelab.agents.options._read_text_with_timeout") as mock_read:
             mock_read.side_effect = TimeoutError("timeout")
-            servers = load_mcp_servers_for_agent("any", root_dir=tmp_root)
+            servers = load_mcp_servers_for_agent("any", root_dir=tmp_root, include_system=True)
             assert servers == {}
+
+    def test_mcp_env_alias_resolves_from_process_env(self, tmp_path: Path, monkeypatch):
+        """MCP env 值可引用进程环境变量名（如 ANTHROPIC_AUTH_TOKEN）"""
+        monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "token-from-anthropic-env")
+        agent_dir = tmp_path / "agents" / "video_manim"
+        agent_dir.mkdir(parents=True)
+        (agent_dir / ".mcp.json").write_text(
+            json.dumps(
+                {
+                    "mcpServers": {
+                        "MiniMax": {
+                            "command": "uvx",
+                            "args": ["minimax-coding-plan-mcp", "-y"],
+                            "env": {
+                                "MINIMAX_API_KEY": "ANTHROPIC_AUTH_TOKEN",
+                                "MINIMAX_API_HOST": "https://api.minimaxi.com",
+                            },
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        servers = load_mcp_servers_for_agent("video_manim", root_dir=tmp_path)
+        assert servers["MiniMax"]["env"]["MINIMAX_API_KEY"] == "token-from-anthropic-env"
+        assert servers["MiniMax"]["env"]["MINIMAX_API_HOST"] == "https://api.minimaxi.com"
 
     def test_mcp_log_tools_triggers_listing(self):
         """MCP_LOG_TOOLS=1 时应触发工具列表逻辑"""
         clear_agent_options_cache()
         with (
-            patch.dict(os.environ, {"MCP_LOG_TOOLS": "1"}),
+            patch.dict(os.environ, {"MCP_LOG_TOOLS": "1", "ISSUELAB_ENABLE_DEFAULT_FEATURES": "1"}),
+            patch("issuelab.agents.options.get_agent_config", return_value=None),
             patch("issuelab.agents.options.load_mcp_servers_for_agent") as mock_load,
             patch("issuelab.agents.options._list_tools_for_mcp_server") as mock_list,
         ):
@@ -228,6 +263,7 @@ class TestSubagents:
 
         # patch AGENTS_DIR to point to tmp agents root
         with (
+            patch.dict(os.environ, {"ISSUELAB_ENABLE_DEFAULT_FEATURES": "1"}),
             patch("issuelab.agents.options.AGENTS_DIR", tmp_path / "agents"),
             patch("issuelab.agents.options.discover_agents") as mock_discover,
         ):
@@ -329,7 +365,7 @@ class TestCaching:
         assert options.max_budget_usd == 1.5
 
     def test_create_agent_options_feature_flags(self, monkeypatch):
-        """agent.yml 功能开关应生效（默认启用）"""
+        """agent.yml 功能开关应生效"""
         from issuelab.agents import options as options_mod
 
         options_mod.clear_agent_options_cache()
@@ -345,6 +381,66 @@ class TestCaching:
 
         options = options_mod.create_agent_options(agent_name="alice")
         assert not any(t.startswith("mcp__") for t in options.allowed_tools)
+
+    def test_feature_flags_default_disabled(self, monkeypatch):
+        """系统智能体默认应关闭可选能力。"""
+        from issuelab.agents import options as options_mod
+
+        monkeypatch.delenv("ISSUELAB_ENABLE_DEFAULT_FEATURES", raising=False)
+        monkeypatch.delenv("ISSUELAB_DEFAULT_ENABLE_SKILLS", raising=False)
+        monkeypatch.delenv("ISSUELAB_DEFAULT_ENABLE_SUBAGENTS", raising=False)
+        monkeypatch.delenv("ISSUELAB_DEFAULT_ENABLE_MCP", raising=False)
+        monkeypatch.setattr(options_mod, "get_agent_config", lambda *a, **k: None)
+
+        flags = options_mod._get_agent_feature_flags("moderator")
+        assert flags == {
+            "enable_skills": False,
+            "enable_subagents": False,
+            "enable_mcp": False,
+        }
+
+    def test_feature_flags_default_enabled_for_personal_agent(self, monkeypatch):
+        """个人智能体默认应开启可选能力。"""
+        from issuelab.agents import options as options_mod
+
+        monkeypatch.delenv("ISSUELAB_ENABLE_DEFAULT_FEATURES", raising=False)
+        monkeypatch.delenv("ISSUELAB_DEFAULT_ENABLE_SKILLS", raising=False)
+        monkeypatch.delenv("ISSUELAB_DEFAULT_ENABLE_SUBAGENTS", raising=False)
+        monkeypatch.delenv("ISSUELAB_DEFAULT_ENABLE_MCP", raising=False)
+        monkeypatch.setattr(options_mod, "get_agent_config", lambda *a, **k: None)
+
+        flags = options_mod._get_agent_feature_flags("alice")
+        assert flags == {
+            "enable_skills": True,
+            "enable_subagents": True,
+            "enable_mcp": True,
+        }
+
+    def test_feature_flags_can_enable_globally(self, monkeypatch):
+        """设置全局开关后可选能力应默认开启。"""
+        from issuelab.agents import options as options_mod
+
+        monkeypatch.setenv("ISSUELAB_ENABLE_DEFAULT_FEATURES", "1")
+        monkeypatch.delenv("ISSUELAB_DEFAULT_ENABLE_SKILLS", raising=False)
+        monkeypatch.delenv("ISSUELAB_DEFAULT_ENABLE_SUBAGENTS", raising=False)
+        monkeypatch.delenv("ISSUELAB_DEFAULT_ENABLE_MCP", raising=False)
+        monkeypatch.setattr(options_mod, "get_agent_config", lambda *a, **k: None)
+
+        flags = options_mod._get_agent_feature_flags("moderator")
+        assert flags == {
+            "enable_skills": True,
+            "enable_subagents": True,
+            "enable_mcp": True,
+        }
+
+
+def test_system_agents_use_higher_default_overrides():
+    """系统智能体在无 agent.yml 时应使用更高默认上限"""
+    from issuelab.agents import options as options_mod
+
+    options_mod.clear_agent_options_cache()
+    options = options_mod.create_agent_options(agent_name="moderator")
+    assert options.max_turns == 100
 
 
 class TestParseObserverResponse:
@@ -600,3 +696,155 @@ class TestStreamingOutput:
             await run_single_agent("test prompt", "test_agent")
 
         assert "## Output Format (required)" in captured["prompt"]
+        assert "请使用 Markdown 输出，禁止输出 YAML/JSON 代码块" in captured["prompt"]
+
+    @pytest.mark.asyncio
+    async def test_output_schema_respects_agent_yaml_format_config(self):
+        """当 agent.yml 配置 output_format=yaml 时应注入 YAML 格式要求"""
+        from claude_agent_sdk import ResultMessage
+
+        from issuelab.agents.executor import run_single_agent
+
+        captured = {}
+
+        async def mock_query(*args, **kwargs):
+            captured["prompt"] = kwargs.get("prompt")
+            result = MagicMock(spec=ResultMessage)
+            result.total_cost_usd = 0.0
+            result.num_turns = 1
+            result.session_id = "test-session"
+            yield result
+
+        with (
+            patch("issuelab.agents.executor.query", mock_query),
+            patch("issuelab.agents.executor.get_agent_config", return_value={"output_format": "yaml"}),
+        ):
+            await run_single_agent("test prompt", "test_agent")
+
+        assert "优先输出以下 YAML" in captured["prompt"]
+
+    @pytest.mark.asyncio
+    async def test_output_schema_uses_global_template(self):
+        """当配置 output_template 时应按模板注入段落规范。"""
+        from claude_agent_sdk import ResultMessage
+
+        from issuelab.agents.executor import run_single_agent
+
+        captured = {}
+
+        async def mock_query(*args, **kwargs):
+            captured["prompt"] = kwargs.get("prompt")
+            result = MagicMock(spec=ResultMessage)
+            result.total_cost_usd = 0.0
+            result.num_turns = 1
+            result.session_id = "test-session"
+            yield result
+
+        with (
+            patch("issuelab.agents.executor.query", mock_query),
+            patch(
+                "issuelab.agents.executor.get_agent_config",
+                return_value={"output_format": "markdown", "output_template": "concise_review_v1"},
+            ),
+        ):
+            await run_single_agent("test prompt", "test_agent")
+
+        assert "## Output Format (required)" in captured["prompt"]
+        assert "`## Summary`" in captured["prompt"]
+        assert "`## Recommended Actions`" in captured["prompt"]
+        assert "`## Sources`" in captured["prompt"]
+
+    @pytest.mark.asyncio
+    async def test_output_schema_applies_section_order_override(self):
+        """agent.yml 的 section_order 应覆盖模板默认顺序。"""
+        from claude_agent_sdk import ResultMessage
+
+        from issuelab.agents.executor import run_single_agent
+
+        captured = {}
+
+        async def mock_query(*args, **kwargs):
+            captured["prompt"] = kwargs.get("prompt")
+            result = MagicMock(spec=ResultMessage)
+            result.total_cost_usd = 0.0
+            result.num_turns = 1
+            result.session_id = "test-session"
+            yield result
+
+        with (
+            patch("issuelab.agents.executor.query", mock_query),
+            patch(
+                "issuelab.agents.executor.get_agent_config",
+                return_value={
+                    "output_format": "markdown",
+                    "output_template": "review_v1",
+                    "section_order": ["summary", "actions", "sources"],
+                },
+            ),
+        ):
+            await run_single_agent("test prompt", "test_agent")
+
+        assert "`## Summary`" in captured["prompt"]
+        assert "`## Recommended Actions`" in captured["prompt"]
+        assert "`## Sources`" in captured["prompt"]
+
+    @pytest.mark.asyncio
+    async def test_system_agent_timeout_defaults_to_600(self):
+        """system agent 在无显式配置时应使用 600s 超时"""
+        from claude_agent_sdk import ResultMessage
+
+        from issuelab.agents.executor import run_single_agent
+
+        captured_timeouts: list[int] = []
+
+        @contextmanager
+        def fake_fail_after(seconds):
+            captured_timeouts.append(int(seconds))
+            yield
+
+        async def mock_query(*args, **kwargs):
+            result = MagicMock(spec=ResultMessage)
+            result.total_cost_usd = 0.0
+            result.num_turns = 1
+            result.session_id = "session"
+            yield result
+
+        with (
+            patch("issuelab.agents.executor.query", mock_query),
+            patch("issuelab.agents.executor.anyio.fail_after", fake_fail_after),
+            patch("issuelab.agents.registry.get_agent_config", return_value=None),
+            patch("issuelab.agents.executor.is_system_agent", return_value=(True, None)),
+        ):
+            await run_single_agent("test prompt", "moderator")
+
+        assert 600 in captured_timeouts
+
+    @pytest.mark.asyncio
+    async def test_video_manim_timeout_uses_agent_override_900(self):
+        """video_manim 应优先使用 agent.yml 配置超时 900s"""
+        from claude_agent_sdk import ResultMessage
+
+        from issuelab.agents.executor import run_single_agent
+
+        captured_timeouts: list[int] = []
+
+        @contextmanager
+        def fake_fail_after(seconds):
+            captured_timeouts.append(int(seconds))
+            yield
+
+        async def mock_query(*args, **kwargs):
+            result = MagicMock(spec=ResultMessage)
+            result.total_cost_usd = 0.0
+            result.num_turns = 1
+            result.session_id = "session"
+            yield result
+
+        with (
+            patch("issuelab.agents.executor.query", mock_query),
+            patch("issuelab.agents.executor.anyio.fail_after", fake_fail_after),
+            patch("issuelab.agents.registry.get_agent_config", return_value={"timeout_seconds": 900}),
+        ):
+            await run_single_agent("test prompt", "video_manim")
+
+        assert 900 in captured_timeouts

@@ -2,6 +2,7 @@
 
 # 智能体信息
 name: "gqy20 - AI 应用开发者"
+agent_type: user
 owner: gqy20
 contact: "your-email@example.com"
 bio: "AI 应用开发者，专注于科研场景的 AI Agent 系统设计，熟悉 Claude Agent SDK、FastMCP 等框架"
@@ -14,14 +15,18 @@ description: "AI 应用开发者，专注于科研场景的 AI Agent 系统设�
 
 # 运行配置
 enabled: true
-max_turns: 30
+max_turns: 100
 max_budget_usd: 10.00
-timeout_seconds: 180
+timeout_seconds: 900
+attempt_timeout_seconds: 300
 
 # 功能开关
 enable_skills: true
 enable_subagents: true
 enable_mcp: true
+output_format: markdown
+mentions_mode: controlled
+output_template: local:deep_research_v1
 
 # 仓库配置（本地执行）
 repository: "gqy20/IssueLab"

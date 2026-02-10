@@ -45,7 +45,7 @@ async def run_observer(issue_number: int, issue_title: str = "", issue_body: str
             "error": "Observer agent not found",
         }
 
-    # 获取 prompt（discover_agents 已移除 frontmatter）
+    # 获取 prompt
     prompt = observer_config["prompt"]
 
     # Issue 分析模式任务说明
@@ -98,7 +98,7 @@ __COMMENTS__"""
     return decision
 
 
-async def run_observer_batch(issue_data_list: list[dict]) -> list[dict]:
+async def run_observer_batch(issue_data_list: list[dict], max_parallel: int = 5) -> list[dict]:
     """并行运行 Observer Agent 分析多个 Issues
 
     Args:
@@ -113,33 +113,36 @@ async def run_observer_batch(issue_data_list: list[dict]) -> list[dict]:
     Returns:
         分析结果列表，每个元素包含 issue_number 和决策结果
     """
-    logger.info(f"开始并行分析 {len(issue_data_list)} 个 Issues")
+    max_parallel = max(1, int(max_parallel))
+    logger.info(f"开始并行分析 {len(issue_data_list)} 个 Issues (max_parallel={max_parallel})")
 
     results = []
+    limiter = anyio.Semaphore(max_parallel)
 
     async with anyio.create_task_group() as tg:
 
         async def analyze_one(issue_data: dict):
             issue_number = issue_data["issue_number"]
-            try:
-                result = await run_observer(
-                    issue_number=issue_number,
-                    issue_title=issue_data.get("issue_title", ""),
-                    issue_body=issue_data.get("issue_body", ""),
-                    comments=issue_data.get("comments", ""),
-                )
-                result["issue_number"] = issue_number
-                results.append(result)
-                logger.info(f"Issue #{issue_number} 分析完成: should_trigger={result.get('should_trigger')}")
-            except Exception as e:
-                logger.error(f"Issue #{issue_number} 分析失败: {e}", exc_info=True)
-                results.append(
-                    {
-                        "issue_number": issue_number,
-                        "should_trigger": False,
-                        "error": str(e),
-                    }
-                )
+            async with limiter:
+                try:
+                    result = await run_observer(
+                        issue_number=issue_number,
+                        issue_title=issue_data.get("issue_title", ""),
+                        issue_body=issue_data.get("issue_body", ""),
+                        comments=issue_data.get("comments", ""),
+                    )
+                    result["issue_number"] = issue_number
+                    results.append(result)
+                    logger.info(f"Issue #{issue_number} 分析完成: should_trigger={result.get('should_trigger')}")
+                except Exception as e:
+                    logger.error(f"Issue #{issue_number} 分析失败: {e}", exc_info=True)
+                    results.append(
+                        {
+                            "issue_number": issue_number,
+                            "should_trigger": False,
+                            "error": str(e),
+                        }
+                    )
 
         for issue_data in issue_data_list:
             tg.start_soon(analyze_one, issue_data)
@@ -246,7 +249,7 @@ async def run_observer_for_papers(
     # 构建论文上下文
     papers_context = build_papers_for_observer(papers)
 
-    # 获取 prompt（discover_agents 已移除 frontmatter）
+    # 获取 prompt
     prompt = arxiv_observer_config["prompt"]
 
     # 替换占位符
@@ -277,8 +280,12 @@ async def run_observer_for_papers(
             continue
         if 0 <= idx_value < len(papers):
             paper = papers[idx_value].copy()
-            paper["reason"] = item.get("reason", "")
-            paper["summary"] = item.get("summary", paper.get("summary", ""))
+            reason = item.get("reason", "")
+            summary = item.get("summary", "")
+            if not summary:
+                summary = paper.get("summary", "")
+            paper["reason"] = reason
+            paper["summary"] = summary
             recommended_papers.append(paper)
 
     logger.info(f"[arxiv_observer] 推荐 {len(recommended_papers)} 篇论文")
@@ -324,7 +331,7 @@ async def run_pubmed_observer_for_papers(
     # 构建文献上下文
     papers_context = build_pubmed_papers_for_observer(papers, query)
 
-    # 获取 prompt（discover_agents 已移除 frontmatter）
+    # 获取 prompt
     prompt = pubmed_observer_config["prompt"]
 
     # 替换占位符

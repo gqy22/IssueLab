@@ -4,54 +4,34 @@ import json
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from issuelab.cli.mentions import parse_github_mentions
 
 
 class TestParseMentions:
     """Tests for mention parsing."""
 
-    def test_single_mention(self):
-        """Test parsing single mention."""
-        text = "@alice please review"
-        mentions = parse_github_mentions(text)
-        assert mentions == ["alice"]
-
-    def test_multiple_mentions(self):
-        """Test parsing multiple mentions."""
-        text = "@alice @bob @charlie"
-        mentions = parse_github_mentions(text)
-        assert mentions == ["alice", "bob", "charlie"]
-
-    def test_duplicate_mentions(self):
-        """Test deduplication."""
-        text = "@alice @bob @alice @charlie @bob"
-        mentions = parse_github_mentions(text)
-        assert mentions == ["alice", "bob", "charlie"]
-
-    def test_mention_with_hyphens(self):
-        """Test usernames with hyphens."""
-        text = "@user-name @test-user-123"
-        mentions = parse_github_mentions(text)
-        assert mentions == ["user-name", "test-user-123"]
-
-    def test_invalid_mentions(self):
-        """Test invalid mention patterns."""
-        text = "@-invalid @invalid- @123"
-        mentions = parse_github_mentions(text)
-        # 正则会匹配 @-invalid 的 invalid 和 @123 的 123
-        # GitHub 的实际行为也是这样的
-        assert mentions == ["invalid", "123"]
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ("@alice please review", ["alice"]),
+            ("@alice @bob @charlie", ["alice", "bob", "charlie"]),
+            ("@alice @bob @alice @charlie @bob", ["alice", "bob", "charlie"]),
+            ("@user-name @test-user-123", ["user-name", "test-user-123"]),
+            # 正则会匹配 @-invalid 的 invalid 和 @123 的 123；与 GitHub 实际行为一致
+            ("@-invalid @invalid- @123", ["invalid", "123"]),
+            ("This is a normal text without any mentions", []),
+        ],
+    )
+    def test_parse_mentions_basic_cases(self, text: str, expected: list[str]):
+        """基础 mention 提取场景。"""
+        assert parse_github_mentions(text) == expected
 
     def test_empty_text(self):
         """Test empty input."""
         assert parse_github_mentions("") == []
         assert parse_github_mentions(None) == []
-
-    def test_no_mentions(self):
-        """Test text without mentions."""
-        text = "This is a normal text without any mentions"
-        mentions = parse_github_mentions(text)
-        assert mentions == []
 
     def test_mention_in_markdown(self):
         """Test mentions in markdown context."""
@@ -71,6 +51,40 @@ class TestParseMentions:
         assert "alice" in mentions
         assert "bob" in mentions
         assert "charlie" in mentions
+
+    def test_controlled_section_only(self):
+        """Only parse mentions inside controlled sections."""
+        text = """
+        普通正文 @noise
+        ---
+        相关人员: @alice @bob
+        """
+        mentions = parse_github_mentions(text, controlled_section_only=True)
+        assert mentions == ["alice", "bob"]
+
+    def test_controlled_section_list_format(self):
+        """Parse list format under 协作请求."""
+        text = """
+        协作请求:
+        - @alice
+        - @bob
+        """
+        mentions = parse_github_mentions(text, controlled_section_only=True)
+        assert mentions == ["alice", "bob"]
+
+    def test_controlled_section_only_reads_trailing_block(self):
+        """Ignore historical mentions in body, read only trailing controlled block."""
+        text = """
+        历史记录：
+        相关人员: @old_agent
+
+        正文继续...
+
+        ---
+        相关人员: @alice @bob
+        """
+        mentions = parse_github_mentions(text, controlled_section_only=True)
+        assert mentions == ["alice", "bob"]
 
 
 class TestMentionsCLI:
@@ -119,44 +133,36 @@ class TestMentionsCLI:
         captured = capsys.readouterr()
         assert "Error" in captured.err
 
+    def test_cli_controlled_section_only(self, capsys):
+        """CLI controlled-section mode ignores free-text mentions."""
+        from issuelab.cli.mentions import main
+
+        body = "正文 @noise\n---\n相关人员: @alice @bob"
+        result = main(["--issue-body", body, "--controlled-section-only"])
+        assert result == 0
+
+        captured = capsys.readouterr()
+        assert captured.out.strip() == "alice,bob"
+
 
 class TestParseAgentsArg:
     """Tests for parse_agents_arg function."""
 
-    def test_comma_separated(self):
-        """Test comma-separated format."""
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("moderator,reviewer_a,observer", ["moderator", "reviewer_a", "observer"]),
+            ("moderator reviewer_a observer", ["moderator", "reviewer_a", "observer"]),
+            ('["moderator", "reviewer_a"]', ["moderator", "reviewer_a"]),
+            ("Moderator,REVIEWER_A,Observer", ["moderator", "reviewer_a", "observer"]),
+            ("  moderator , reviewer_a , observer  ", ["moderator", "reviewer_a", "observer"]),
+        ],
+    )
+    def test_parse_agents_arg_variants(self, raw: str, expected: list[str]):
+        """支持 CSV/空格/JSON 与大小写、空白处理。"""
         from issuelab.__main__ import parse_agents_arg
 
-        result = parse_agents_arg("echo,test,moderator")
-        assert result == ["echo", "test", "moderator"]
-
-    def test_space_separated(self):
-        """Test space-separated format."""
-        from issuelab.__main__ import parse_agents_arg
-
-        result = parse_agents_arg("echo test moderator")
-        assert result == ["echo", "test", "moderator"]
-
-    def test_json_array(self):
-        """Test JSON array format."""
-        from issuelab.__main__ import parse_agents_arg
-
-        result = parse_agents_arg('["echo", "test"]')
-        assert result == ["echo", "test"]
-
-    def test_mixed_case(self):
-        """Test that results are lowercased."""
-        from issuelab.__main__ import parse_agents_arg
-
-        result = parse_agents_arg("Echo,TEST,Moderator")
-        assert result == ["echo", "test", "moderator"]
-
-    def test_whitespace_handling(self):
-        """Test whitespace is trimmed."""
-        from issuelab.__main__ import parse_agents_arg
-
-        result = parse_agents_arg("  echo , test , moderator  ")
-        assert result == ["echo", "test", "moderator"]
+        assert parse_agents_arg(raw) == expected
 
 
 class TestDispatch:
@@ -245,12 +251,47 @@ enabled: false
         assert len(matched) == 1
         assert matched[0]["owner"] == "carol"
 
+    def test_dispatch_mentions_skips_system_agents(self, monkeypatch):
+        """System agents should be ignored by dispatch workflow."""
+        from issuelab.cli.dispatch import dispatch_mentions
+
+        monkeypatch.setattr(
+            "issuelab.cli.dispatch.load_registry",
+            lambda _agents_dir: {
+                "moderator": {
+                    "owner": "moderator",
+                    "repository": "gqy20/IssueLab",
+                    "agent_type": "system",
+                },
+                "alice": {
+                    "owner": "alice",
+                    "repository": "gqy20/IssueLab",
+                    "agent_type": "user",
+                },
+            },
+        )
+
+        summary = dispatch_mentions(
+            mentions=["moderator", "alice"],
+            agents_dir="agents",
+            source_repo="gqy20/IssueLab",
+            issue_number=1,
+            dry_run=True,
+            app_id="fake_app_id",
+            app_private_key="fake_private_key",
+        )
+
+        assert summary["total_count"] == 1
+        assert summary["success_count"] == 1
+        assert summary["local_agents"] == ["alice"]
+
 
 class TestDispatchCLI:
     """Tests for dispatch CLI mention parsing."""
 
-    def test_parse_json_mentions(self, monkeypatch):
-        """Test parsing JSON format mentions."""
+    @pytest.mark.parametrize("mentions", ['["alice", "bob"]', "alice,bob"])
+    def test_parse_mentions_inputs(self, monkeypatch, mentions: str):
+        """支持 JSON 与 CSV mentions 输入格式。"""
         from issuelab.cli.dispatch import main
 
         # Mock environment
@@ -266,37 +307,7 @@ class TestDispatchCLI:
             result = main(
                 [
                     "--mentions",
-                    '["alice", "bob"]',
-                    "--agents-dir",
-                    str(agents_dir),
-                    "--source-repo",
-                    "test/repo",
-                    "--issue-number",
-                    "1",
-                ]
-            )
-
-            # Returns 0 even with no matches (no agents to dispatch to)
-            assert result == 0
-
-    def test_parse_csv_mentions(self, monkeypatch):
-        """Test parsing CSV format mentions."""
-        from issuelab.cli.dispatch import main
-
-        # Mock environment
-        monkeypatch.setenv("GITHUB_APP_ID", "fake_app_id")
-        monkeypatch.setenv("GITHUB_APP_PRIVATE_KEY", "fake_private_key")
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Create empty agents directory
-            agents_dir = Path(tmpdir)
-            agents_dir.mkdir(exist_ok=True)
-
-            # Should handle CSV format
-            result = main(
-                [
-                    "--mentions",
-                    "alice,bob",
+                    mentions,
                     "--agents-dir",
                     str(agents_dir),
                     "--source-repo",

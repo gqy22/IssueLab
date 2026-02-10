@@ -37,6 +37,16 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def _write_metrics(path: str | None, metrics: dict[str, Any]) -> None:
+    if not path:
+        return
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(metrics, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.warning(f"写入 metrics 失败: {e}")
+
+
 def parse_arxiv_date(date_str: str) -> str:
     """解析 arXiv 日期格式"""
     try:
@@ -147,6 +157,13 @@ def build_papers_for_observer(papers: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _normalize_title_for_compare(title: str) -> str:
+    lowered = title.lower().strip()
+    lowered = re.sub(r"^\[论文讨论\]\s*", "", lowered)
+    lowered = re.sub(r"\s+", " ", lowered)
+    return lowered
+
+
 def filter_existing_papers(papers: list[dict], repo_name: str, token: str) -> list[dict]:
     """过滤掉已存在 Issue 的论文
 
@@ -164,14 +181,24 @@ def filter_existing_papers(papers: list[dict], repo_name: str, token: str) -> li
     g = Github(token)
     repo = g.get_repo(repo_name)
 
-    # 获取已存在的 Issue 标题
-    existing_titles = {issue.title for issue in repo.get_issues(state="all")}
+    # 获取已存在的 Issue 标题 + 正文中的 arXiv ID（更稳健，避免仅按标题导致重复）
+    existing_titles_normalized: set[str] = set()
+    existing_arxiv_ids: set[str] = set()
+    arxiv_id_pattern = re.compile(r"arxiv\.org/(?:abs|pdf)/([0-9]{4}\.[0-9]{4,5}(?:v\d+)?)", re.IGNORECASE)
+
+    for issue in repo.get_issues(state="all"):
+        existing_titles_normalized.add(_normalize_title_for_compare(issue.title))
+        body = issue.body or ""
+        for match in arxiv_id_pattern.findall(body):
+            existing_arxiv_ids.add(match.lower())
 
     # 过滤
     filtered = []
     for paper in papers:
         title = f"[论文讨论] {paper['title']}"
-        if title in existing_titles:
+        title_key = _normalize_title_for_compare(title)
+        paper_id = str(paper.get("id", "")).lower()
+        if title_key in existing_titles_normalized or paper_id in existing_arxiv_ids:
             logger.debug(f"跳过已存在: {title[:50]}...")
         else:
             filtered.append(paper)
@@ -307,9 +334,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="arXiv Monitor - 智能获取并分析论文")
     parser.add_argument("--token", type=str, help="GitHub Token")
     parser.add_argument("--repo", type=str, help="Repository (owner/repo)")
-    parser.add_argument("--categories", type=str, default="cs.AI,cs.LG,cs.CL")
+    parser.add_argument("--categories", type=str, default="cs.AI,cs.LG,cs.CL,cs.CV,cs.RO,cs.IR,cs.NE,stat.ML")
     parser.add_argument("--max-papers", type=int, default=10, help="获取论文数量（分析前）")
+    parser.add_argument("--max-recommended", type=int, default=2, help="最多推荐论文数量")
     parser.add_argument("--output", type=str, help="Output JSON file (optional)")
+    parser.add_argument("--metrics-output", type=str, help="Metrics JSON output file (optional)")
     parser.add_argument("--last-scan", type=str, help="Last scan time (ISO format)")
     parser.add_argument("--scan-only", action="store_true", help="Only scan, don't analyze")
 
@@ -324,6 +353,18 @@ def main(argv: list[str] | None = None) -> int:
     last_scan = args.last_scan or (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     categories = [c.strip() for c in args.categories.split(",") if c.strip()]
+    metrics: dict[str, Any] = {
+        "monitor": "arxiv",
+        "categories": categories,
+        "last_scan": last_scan,
+        "max_papers": args.max_papers,
+        "max_recommended": args.max_recommended,
+        "fetched_count": 0,
+        "new_papers_count": 0,
+        "recommended_count": 0,
+        "created_issues": 0,
+        "status": "started",
+    }
 
     logger.info(f"{'=' * 60}")
     logger.info("[arXiv Monitor] 开始扫描新论文")
@@ -334,9 +375,12 @@ def main(argv: list[str] | None = None) -> int:
     # 获取论文
     papers = fetch_papers(categories, last_scan, args.max_papers)
     logger.info(f"发现 {len(papers)} 篇新论文")
+    metrics["fetched_count"] = len(papers)
 
     if not papers:
         logger.info("未发现新论文")
+        metrics["status"] = "no_new_papers"
+        _write_metrics(args.metrics_output, metrics)
         return 0
 
     # 保存 JSON（如果指定）
@@ -349,28 +393,41 @@ def main(argv: list[str] | None = None) -> int:
     if args.scan_only:
         for i, p in enumerate(papers, 1):
             logger.info(f"   {i}. [{p['category']}] {p['title'][:50]}...")
+        metrics["status"] = "scan_only"
+        _write_metrics(args.metrics_output, metrics)
         return 0
 
     # 分析并创建 Issues
     if args.token and args.repo:
         # 先过滤已存在的论文
         new_papers = filter_existing_papers(papers, args.repo, args.token)
+        metrics["new_papers_count"] = len(new_papers)
 
         # Observer 分析（只分析新论文）
         recommended = analyze_with_observer(new_papers, args.token)
 
+        if args.max_recommended > 0:
+            recommended = recommended[: args.max_recommended]
+        metrics["recommended_count"] = len(recommended)
+
         if len(recommended) == 0:
             if len(new_papers) == 0:
                 logger.info("所有论文已存在，无需推荐")
+                metrics["status"] = "no_new_after_dedupe"
             elif len(new_papers) < 1:
                 logger.info("新论文数量不足 1 篇，无法智能推荐")
+                metrics["status"] = "insufficient_candidates"
             else:
                 logger.info("智能分析未返回有效结果")
+                metrics["status"] = "no_recommendation"
+            _write_metrics(args.metrics_output, metrics)
             return 0
 
         # 创建 Issues
         logger.info("开始创建 Issues...")
         created = create_issues(recommended, args.repo, args.token)
+        metrics["created_issues"] = int(created)
+        metrics["status"] = "completed"
         logger.info(f"{'=' * 60}")
         logger.info(f"[完成] 创建 {created} 个 Issues")
         logger.info(f"{'=' * 60}")
@@ -378,7 +435,9 @@ def main(argv: list[str] | None = None) -> int:
         logger.info("提供 --token 和 --repo 参数可自动分析并创建 Issues")
         for i, p in enumerate(papers, 1):
             logger.info(f"   {i}. [{p['category']}] {p['title'][:50]}...")
+        metrics["status"] = "no_repo_or_token"
 
+    _write_metrics(args.metrics_output, metrics)
     return 0
 
 

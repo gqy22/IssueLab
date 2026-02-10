@@ -10,7 +10,7 @@ on:
 # 并发控制：避免多次扫描堆积
 concurrency:
   group: observer-scan
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   issues: write
@@ -21,6 +21,7 @@ jobs:
     # 仅在主仓库运行，避免在fork仓库中不必要的定时执行
     if: github.repository == 'gqy20/IssueLab'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
@@ -59,6 +60,7 @@ jobs:
           # 使用新的 auto-trigger 参数替代 --post（避免bot评论触发问题）
           uv run python -m issuelab observe-batch \
             --issues "${{ steps.get_issues.outputs.issue_numbers }}" \
+            --max-parallel 5 \
             --auto-trigger
 
           echo "=== 分析完成 ==="
@@ -76,6 +78,7 @@ jobs:
           PROMPT_LOG: "1"
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: observer-logs-${{ github.run_id }}
           path: logs/

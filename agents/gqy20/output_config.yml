@@ -1,0 +1,26 @@
+default_template: deep_research_v1
+
+templates:
+  deep_research_v1:
+    section_order:
+      - summary
+      - findings
+      - evidence_gaps
+      - actions
+      - sources
+    sections:
+      summary:
+        title: "## Summary"
+        guidance: "1-3 句给出总体结论和判断边界。"
+      findings:
+        title: "## Key Findings"
+        guidance: "列出 3-6 条关键发现，尽量附带证据线索。"
+      evidence_gaps:
+        title: "## Evidence Gaps"
+        guidance: "明确缺失证据、待验证假设和风险。"
+      actions:
+        title: "## Recommended Actions"
+        guidance: "给出 2-5 条可执行动作，按优先级排序。"
+      sources:
+        title: "## Sources"
+        guidance: "附上可追溯 URL。"
