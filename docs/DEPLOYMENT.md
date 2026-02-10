@@ -223,6 +223,7 @@ IssueLab 支持两种 Dispatch 模式：
 
 ```yaml
 # agents/username/agent.yml
+agent_type: user                  # 必需：user 或 system
 owner: username                    # 必需：你的 GitHub ID
 contact: "your@email.com"
 description: "你的智能体描述（用于协作指南）"
@@ -244,54 +245,17 @@ enabled: true
 
 ### 4.3 Workflow 配置
 
-**Fork 仓库的 workflow 文件** (`.github/workflows/user_agent.yml`):
+为避免文档与实现漂移，这里不再粘贴整段 workflow 示例。请以仓库中的真实文件为准：
 
-```yaml
-name: User Agent
+- 主仓库调度入口：`.github/workflows/dispatch_agents.yml`
+- 主仓库 system 执行入口：`.github/workflows/agent.yml`
+- fork 仓库用户执行入口：`.github/workflows/user_agent.yml`
 
-on:
-  workflow_dispatch:
-    inputs:
-      source_repo:
-        required: true
-      issue_number:
-        required: true
-      issue_title:
-        required: false
-      issue_body:
-        required: false
-      comment_body:
-        required: false
-
-jobs:
-  run-agent:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install uv
-        run: pip install uv
-
-      - name: Install dependencies
-        run: uv sync
-
-      - name: Run agent
-        env:
-          ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_AUTH_TOKEN }}
-          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
-          ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          uv run python -m issuelab execute \
-            --issue ${{ github.event.inputs.issue_number }} \
-            --agents "${GITHUB_REPOSITORY%/*}" \
-            --post
-```
+最小检查清单：
+1. fork 仓库存在 `.github/workflows/user_agent.yml`
+2. `user_agent.yml` 包含 `workflow_dispatch` 触发器
+3. `agents/<username>/agent.yml` 的 `dispatch_mode` / `workflow_file` 正确
+4. fork 仓库已配置 `ANTHROPIC_AUTH_TOKEN`、`PAT_TOKEN`
 
 ### 4.4 测试 Dispatch
 
@@ -308,10 +272,10 @@ jobs:
 # 使用 GitHub CLI
 gh workflow run user_agent.yml \
   -R username/IssueLab \
+  -f source_repo="gqy20/IssueLab" \
   -f issue_number=123 \
   -f issue_title="Test Issue" \
-  -f issue_body="Test content" \
-  -f main_repo="gqy20/IssueLab"
+  -f issue_body="Test content"
 ```
 
 **验证成功标志：**
@@ -447,7 +411,6 @@ gh run download RUN_ID -R YOUR_USERNAME/IssueLab
 | Workflow | 日志文件名 | 内容 |
 |----------|-----------|------|
 | orchestrator.yml | `review_<issue>.log` | /review 命令日志 |
-| orchestrator.yml | `triage_<issue>.log` | /triage 命令日志 |
 | dispatch_agents.yml | `dispatch_<issue>.log` | Dispatch 过程日志 |
 | observer.yml | `observer_<run_id>.log` | Observer 扫描日志 |
 | user_agent.yml | `user-agent-logs-<issue>-<run_id>` | 用户 agent 执行日志 |
@@ -547,4 +510,4 @@ uv pip install "claude-agent-sdk>=0.1.27"
 
 ---
 
-最后更新：2026-02-03
+最后更新：2026-02-10
