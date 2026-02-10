@@ -3,6 +3,8 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from issuelab.tools.github import MAX_COMMENT_LENGTH, get_issue_info, post_comment, truncate_text, update_label
 
 
@@ -206,39 +208,24 @@ def test_update_label():
         mock_run.assert_called_once()
 
 
-def test_truncate_text_short_text_not_truncated():
-    text = "Short text"
+@pytest.mark.parametrize("text", ["Short text", "a" * MAX_COMMENT_LENGTH])
+def test_truncate_text_not_truncated_cases(text: str):
     result = truncate_text(text)
     assert result == text
     assert "已截断" not in result
 
 
-def test_truncate_text_exact_limit_not_truncated():
-    text = "a" * MAX_COMMENT_LENGTH
-    result = truncate_text(text)
-    assert len(result) == MAX_COMMENT_LENGTH
-    assert "已截断" not in result
-
-
-def test_truncate_text_long_text_truncated():
-    text = "a" * (MAX_COMMENT_LENGTH + 1000)
-    result = truncate_text(text)
-    assert len(result) <= MAX_COMMENT_LENGTH
-    assert "已截断" in result
-
-
-def test_truncate_text_at_paragraph_boundary():
-    paragraphs = ["段落" + str(i) + "\n\n" for i in range(100)]
-    text = "".join(paragraphs) * 100
-    result = truncate_text(text, max_length=1000)
-    assert len(result) <= 1000
-    assert "已截断" in result
-
-
-def test_truncate_text_custom_max_length():
-    text = "a" * 1000
-    result = truncate_text(text, max_length=100)
-    assert len(result) <= 100
+@pytest.mark.parametrize(
+    ("text", "max_length"),
+    [
+        ("a" * (MAX_COMMENT_LENGTH + 1000), MAX_COMMENT_LENGTH),
+        (("".join(f"段落{i}\n\n" for i in range(100))) * 100, 1000),
+        ("a" * 1000, 100),
+    ],
+)
+def test_truncate_text_truncated_cases(text: str, max_length: int):
+    result = truncate_text(text, max_length=max_length)
+    assert len(result) <= max_length
     assert "已截断" in result
 
 
