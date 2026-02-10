@@ -296,13 +296,21 @@ async def run_single_agent(prompt: str, agent_name: str, *, stage_name: str | No
         return execution_info
     except Exception as e:
         error_type = _classify_run_exception(e)
-        logger.error(f"[{agent_name}] 运行失败: {e}", exc_info=True)
+        timeout_hint = ""
+        if error_type == "timeout":
+            timeout_hint = (
+                f" (attempt_timeout_seconds={attempt_timeout_seconds}, overall_timeout_seconds={timeout_seconds})"
+            )
+        logger.error(f"[{agent_name}] 运行失败: {e}{timeout_hint}", exc_info=True)
+        error_message = str(e) or error_type
+        if timeout_hint:
+            error_message = f"{error_message}{timeout_hint}"
         return {
             "ok": False,
             "error_type": error_type,
-            "error_message": str(e),
+            "error_message": error_message,
             "stage": stage_name,
-            "response": f"[系统护栏] Agent {agent_name} 执行失败（{error_type}）: {e}",
+            "response": f"[系统护栏] Agent {agent_name} 执行失败（{error_type}）: {error_message}",
             "cost_usd": 0.0,
             "num_turns": 0,
             "tool_calls": [],
